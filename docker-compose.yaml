@@ -1,5 +1,5 @@
 service:
-  user-service-api:
+  task-manager-api:
     build: 
       context: ./AI-Task-Manager-API
     container_name: task-manager-api
@@ -10,17 +10,27 @@ service:
       TASK_MANAGER_DB_TEST_URL: ${TASK_MANAGER_DB_TEST_URL}
     ports:
      - 8080:8080
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     depends_on:
       task-manager-db:
         condition: service_healthy
         restart: true
 
-  task-manager-app:
+  task-manager-ui:
     build:
       context: ./AI-Task-Manager-API
-    container_name: task-manager-app
+    container_name: task-manager-ui
     ports:
       - 5173:80
+    depends_on:
+      task-manager-api:
+        condition: service_healthy
+        restart: true
 
   task-manager-db:
     image: postgres:18-bookworm
