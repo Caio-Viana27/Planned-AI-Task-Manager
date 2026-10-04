@@ -1,0 +1,2 @@
+CREATE DATABASE IF NOT EXISTS task_manager_db;
+CREATE DATABASE IF NOT EXISTS task_manager_db_test;
