@@ -1,0 +1,43 @@
+service:
+  user-service-api:
+    build: 
+      context: ./AI-Task-Manager-API
+    container_name: task-manager-api
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TASK_MANAGER_DB_URL: ${TASK_MANAGER_DB_URL}
+      TASK_MANAGER_DB_TEST_URL: ${TASK_MANAGER_DB_TEST_URL}
+    ports:
+     - 8080:8080
+    depends_on:
+      task-manager-db:
+        condition: service_healthy
+        restart: true
+
+  task-manager-app:
+    build:
+      context: ./AI-Task-Manager-API
+    container_name: task-manager-app
+    ports:
+      - 5173:80
+
+  task-manager-db:
+    image: postgres:18-bookworm
+    container_name: task-manager-db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init-task-manager-db:/docker-entrypoint-initdb.d
+      - task_manager_db_volume:/var/lib/postgresql/18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${TASK_MANAGER_DB_URL}"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  task_manager_db_volume:
