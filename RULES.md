@@ -9,3 +9,7 @@ Agents may commit, but **never push** to any remote, in the root repo or in eith
 ## 2. Never edit an applied Flyway migration
 
 Never modify a migration in `AI-Task-Manager-API/src/main/resources/db/migration/postgres/` once it has been applied. Every schema or seed change goes in a new `V{n}__description.sql`.
+
+## 3. Never read the `.env` file
+
+Never read, print, or otherwise access the contents of the `.env` file at the repo root (or any other `.env` file). It holds real secrets. Use `.env.example` to learn which variables exist.

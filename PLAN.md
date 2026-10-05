@@ -18,7 +18,6 @@ These decisions resolve ambiguities in earlier drafts. Change them here first if
 | Chat | **Query-only and stateless** in v1. The client may send the last few messages as context, and nothing is persisted. Creating and editing tasks through chat (tool calling) comes in a later phase. |
 | Roles | `USER` and `ADMIN` are seeded. Every new account gets `USER`. There are no admin endpoints in v1. Every user sees only their own tasks. |
 | User name | Sign-up takes `name`, a display name that isn't unique and maps to `USERS.NAME`. Users sign in with `email`. |
-| V1 migration | `V1__create-tables.sql` has a syntax error (a missing comma before `CONSTRAINT PK_TASK_SUBTASK`), so no database can have applied it. It is **fixed in place** as a one-time exception, approved by the maintainer, to the "never edit an applied migration" rule in `RULES.md`. All other schema changes go in new migrations. |
 
 ## 1. Schema changes (`V2__task-due-date-and-subtask-rules.sql`)
 
@@ -45,13 +44,27 @@ The service layer enforces the one-level rule: a task that is already a subtask 
   "status": "TODO | IN_PROGRESS | OVERDUE | DONE",
   "complexity": "EASY | MEDIUM | HARD | null",
   "parentTaskId": "uuid | null",
-  "subtasks": [ { "id", "title", "status", "priority", "dueDate" } ],
+  "subtasks": [ "SubtaskSummary" ],
   "createdAt": "ISO-8601",
   "updatedAt": "ISO-8601"
 }
 ```
 
 `subtasks` appears only in the single-task response (`GET /tasks/{id}`). List responses leave it out.
+
+### SubtaskSummary object
+
+```json
+{
+  "id": "uuid",
+  "title": "string (1-100)",
+  "status": "TODO | IN_PROGRESS | OVERDUE | DONE",
+  "priority": "LOW | MEDIUM | HIGH",
+  "dueDate": "2026-10-31 | null"
+}
+```
+
+`SubtaskSummary` is a deliberately trimmed view, holding only what the subtask list on the parent's detail page displays. `description`, `complexity`, `parentTaskId`, and the timestamps are left out to keep `GET /tasks/{id}` small. To get a subtask's full details, call `GET /tasks/{subtaskId}`.
 
 ### Validation and defaults
 
