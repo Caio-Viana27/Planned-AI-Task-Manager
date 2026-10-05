@@ -91,7 +91,7 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
   - `docker-compose.yaml`:
     - Rename `service:` to `services:`.
     - Rename the API service `user-service-api` to `task-manager-api`.
-    - Point the UI service build at `./AI-Task-Manager-IU`.
+    - Point the UI service build at `./AI-Task-Manager-UI`.
     - Pass `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`, `JWT_SECRET`, `GEMINI_API_KEY`, `GEMINI_MODEL`, and `APP_TIMEZONE` to the API.
     - Healthcheck: `pg_isready -U $${POSTGRES_USER} -d task_manager_db`.
     - Postgres 18 volume: mount `/var/lib/postgresql`, which is the PG18 image layout.

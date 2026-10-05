@@ -19,7 +19,7 @@ This root repo is a thin wrapper. The real code lives in two **git submodules**:
 | Path | What | Stack |
 |---|---|---|
 | `AI-Task-Manager-API/` | REST API | Java 25, Spring Boot 4.1, Spring AI 2.0 (Google GenAI), JPA, Flyway, Spring Security, springdoc-openapi, Lombok, PostgreSQL |
-| `AI-Task-Manager-IU/` | Web UI ("IU" is the repo name, keep it) | React 19, TypeScript 6, Vite 8, ESLint |
+| `AI-Task-Manager-UI/` | Web UI | React 19, TypeScript 6, Vite 8, ESLint |
 | `docker-compose.yaml` | Local stack: API (8080), UI (5173 → nginx 80), Postgres 18 (5432) | |
 | `init-task-manager-db/` | SQL run by the Postgres container on first start | |
 
@@ -33,7 +33,7 @@ API (run inside `AI-Task-Manager-API/`):
 ./mvnw package -DskipTests  # build jar
 ```
 
-UI (run inside `AI-Task-Manager-IU/`):
+UI (run inside `AI-Task-Manager-UI/`):
 
 ```bash
 npm ci
@@ -96,7 +96,7 @@ If a check can't be run, say so explicitly. Never claim it passed.
 ## Configuration and secrets
 
 - Secrets and env vars live in a git-ignored **`.env` at the repo root**, read by docker-compose. Keep a committed `.env.example` up to date with every variable (no real values).
-- Variables: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `TASK_MANAGER_DB_URL`, `TASK_MANAGER_DB_TEST_URL`, and the Gemini API key.
+- Variables: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `TASK_MANAGER_DB_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `JWT_SECRET`, `APP_TIMEZONE`. `.env.example` describes each one.
 - Never commit secrets or print them in logs.
 
 ## Git workflow
@@ -106,15 +106,11 @@ If a check can't be run, say so explicitly. Never claim it passed.
 - Changes inside a submodule must be committed **in that submodule's repo**. Then commit the updated submodule pointer in the root repo.
 - Don't commit build output (`target/`, `dist/`, `node_modules/`).
 
-## Known issues (as of 2026-10-03)
+## Known issues (as of 2026-10-05)
 
-Check these before trusting the Docker setup:
+Check these before trusting the Docker setup. Wave 0 (`plans/wave-0-foundations.md`) fixes them.
 
-- `docker-compose.yaml`:
-  - The top-level key is `service:` but should be `services:`.
-  - `task-manager-app` builds from `./AI-Task-Manager-API` but should build from `./AI-Task-Manager-IU`.
-  - The DB healthcheck passes `TASK_MANAGER_DB_URL` (a URL) to `pg_isready -d`, which expects a database name.
-- `init-task-manager-db/init.sql`: PostgreSQL doesn't support `CREATE DATABASE IF NOT EXISTS`.
-- `AI-Task-Manager-IU/Dockerfile` copies `nginx.conf`, but that file doesn't exist.
-- `V1__create-tables.sql`: there's a missing comma before `CONSTRAINT PK_TASK_SUBTASK`.
-- `application.properties` has no datasource, Flyway, or Gemini config yet.
+- `AI-Task-Manager-UI/Dockerfile` copies `nginx.conf`, but that file doesn't exist.
+- `V1__create-tables.sql`: the missing comma before `CONSTRAINT PK_TASK_SUBTASK` is fixed but not yet committed in the API repo.
+- `application.properties` uses `flyway.*` and `gemini.*` keys that Spring Boot and Spring AI don't read.
+- Spring Security's default config blocks `/actuator/health`, so the API healthcheck fails.
