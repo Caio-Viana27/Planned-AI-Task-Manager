@@ -1,4 +1,4 @@
-service:
+services:
   task-manager-api:
     build: 
       context: ./AI-Task-Manager-API
@@ -8,10 +8,13 @@ service:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TASK_MANAGER_DB_URL: ${TASK_MANAGER_DB_URL}
       TASK_MANAGER_DB_TEST_URL: ${TASK_MANAGER_DB_TEST_URL}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL}
+      JWT_SECRET: ${JWT_SECRET}
     ports:
      - 8080:8080
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      test: ["CMD", "curl", "-f", "${TASK_MANAGER_API_ACTUATOR_URL}"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -23,7 +26,7 @@ service:
 
   task-manager-ui:
     build:
-      context: ./AI-Task-Manager-API
+      context: ./AI-Task-Manager-UI
     container_name: task-manager-ui
     ports:
       - 5173:80
@@ -44,7 +47,7 @@ service:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${TASK_MANAGER_DB_URL}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${TASK_MANAGER_DB}"]
       interval: 10s
       timeout: 10s
       retries: 5
