@@ -1,2 +1,1 @@
 CREATE DATABASE task_manager_db;
-CREATE DATABASE task_manager_db_test;

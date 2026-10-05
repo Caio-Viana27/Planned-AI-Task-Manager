@@ -1,20 +1,20 @@
 services:
   task-manager-api:
-    build: 
+    build:
       context: ./AI-Task-Manager-API
     container_name: task-manager-api
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TASK_MANAGER_DB_URL: ${TASK_MANAGER_DB_URL}
-      TASK_MANAGER_DB_TEST_URL: ${TASK_MANAGER_DB_TEST_URL}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_MODEL: ${GEMINI_MODEL}
       JWT_SECRET: ${JWT_SECRET}
+      APP_TIMEZONE: ${APP_TIMEZONE}
     ports:
      - 8080:8080
     healthcheck:
-      test: ["CMD", "curl", "-f", "${TASK_MANAGER_API_ACTUATOR_URL}"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -42,12 +42,12 @@ services:
       - "5432:5432"
     volumes:
       - ./init-task-manager-db:/docker-entrypoint-initdb.d
-      - task_manager_db_volume:/var/lib/postgresql/18
+      - task_manager_db_volume:/var/lib/postgresql
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${TASK_MANAGER_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d task_manager_db"]
       interval: 10s
       timeout: 10s
       retries: 5
