@@ -1,6 +1,6 @@
-[submodule "AI-Task-Manager-IU"]
-	path = AI-Task-Manager-IU
-	url = git@github.com:Caio-Viana27/AI-Task-Manager-IU.git
 [submodule "AI-Task-Manager-API"]
 	path = AI-Task-Manager-API
 	url = git@github.com:Caio-Viana27/AI-Task-Manager-API.git
+[submodule "AI-Task-Manager-UI"]
+	path = AI-Task-Manager-UI
+	url = git@github.com:Caio-Viana27/AI-Task-Manager-UI.git
