@@ -262,7 +262,7 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
 ### T2.1 API: task schema, entities, and lookups
 - **Repo:** API · **Depends on:** T1.1 · **PLAN:** §1, §2 (Task object, Validation), §4 (`GET /lookups`)
 - **Scope:**
-  - `V2__task-due-date-and-subtask-rules.sql`, exactly as described in PLAN §1.
+  - A new migration for the task schema, exactly as described in PLAN §1.
   - Entities: `Priority`, `TaskStatus`, `Complexity`, and `Task`. `Task` has a `ManyToOne` to user and the lookups, and a `parent` mapped through the `TASK_SUBTASK` join table (`@JoinTable` with a unique subtask).
   - Repositories for each.
   - `service/LookupService`:
@@ -270,12 +270,12 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
     - caches the lookups
   - `controller/LookupController` for `GET /api/v1/lookups`.
 - **Acceptance:**
-  - Migration test: V1 and V2 apply.
+  - Migration test: every migration applies.
   - These all fail at the DB level: a blank title, a subtask with two parents, and a task that is its own parent.
   - The lookups endpoint returns the seeded names in seed order.
   - An unknown name produces the right error code.
 - **Verify:** `./mvnw test`
-- **Commit:** `feat(api): add task schema v2, task and lookup entities, lookups endpoint`
+- **Commit:** `feat(api): add task schema migration, task and lookup entities, lookups endpoint`
 
 ### T2.2 API: task CRUD
 - **Repo:** API · **Depends on:** T1.2, T2.1 · **PLAN:** §2 (all), §4 (create, view, edit, status change, delete)
@@ -530,7 +530,7 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
 - **Repo:** API · **Depends on:** T1.3, T5.1 · **PLAN:** §3 (Reset password scenario and endpoints)
 - **Scope:**
   - Add the `spring-boot-starter-mail` dependency.
-  - `V3__password-reset-token.sql`.
+  - A new migration for the `PASSWORD_RESET_TOKEN` table.
   - `entity/PasswordResetToken` and its repository.
   - `service/PasswordResetService`:
     - creates a random 32-byte token, stores only its SHA-256 hash, sets a 30-minute expiry, and makes it single-use

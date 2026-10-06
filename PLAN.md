@@ -19,7 +19,7 @@ These decisions resolve ambiguities in earlier drafts. Change them here first if
 | Roles | `USER` and `ADMIN` are seeded. Every new account gets `USER`. There are no admin endpoints in v1. Every user sees only their own tasks. |
 | User name | Sign-up takes `name`, a display name that isn't unique and maps to `USERS.NAME`. Users sign in with `email`. |
 
-## 1. Schema changes (`V2__task-due-date-and-subtask-rules.sql`)
+## 1. Task schema changes (new migration)
 
 - `TASK.DUE_DATE DATE NULL`.
 - A not-blank check on title: `CHECK (TITLE ~ '\S')`.
@@ -306,7 +306,7 @@ All of this follows the conventions in `AGENTS.md`: React Router, TanStack Query
 |---|---|---|
 | 0 | Fix the infra: `docker-compose.yaml` (`services:`, UI build context, healthcheck), `init.sql`, the UI `nginx.conf`, the V1 comma, `application.properties`, `.env.example` | `docker compose up --build` starts all three services and Flyway applies V1 |
 | 1 | Auth: sign up, sign in, `/users/me`, JWT security config, error handler, UI login and signup | Tests pass and the UI can log in and out |
-| 2 | Task CRUD, filters, subtasks, lookups, the overdue job, the V2 migration, and the UI dashboard and detail pages | All §4 scenarios are covered by tests |
+| 2 | Task CRUD, filters, subtasks, lookups, the overdue job, the task schema migration (§1), and the UI dashboard and detail pages | All §4 scenarios are covered by tests |
 | 3 | AI suggest and breakdown | All §5 scenarios except chat are covered, with the AI mocked |
 | 4 | Chat assistant (query-only) | The chat scenarios are covered |
 | 5 | Password reset (SMTP, Mailpit in compose) | The reset scenarios are covered |

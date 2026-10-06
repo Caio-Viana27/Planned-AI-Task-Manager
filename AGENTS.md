@@ -73,6 +73,7 @@ If a check can't be run, say so explicitly. Never claim it passed.
 ### Database and migrations
 
 - Flyway migrations live in `src/main/resources/db/migration/postgres/`.
+- Planning docs (`PLAN.md`, `TASKS.md`, `plans/`) say that a migration is needed and what it does, never its version number. The agent writing the migration takes the next free `V{n}` at that time, so parallel or reordered work never fights over a number.
 - Lookup tables (`PRIORITIES`, `TASK_STATUS`, `COMPLEXITIES`, `ROLE`) are seeded in migrations. Reference their names, not hard-coded IDs.
 - Tasks belong to `USER_ID`. Always scope task queries to the authenticated user.
 
