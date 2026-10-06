@@ -40,6 +40,7 @@ npm ci
 npm run dev       # Vite dev server on :5173
 npm run lint
 npm run build     # tsc -b && vite build
+npm test          # vitest run
 ```
 
 Full stack (run from the root): `docker compose up --build`
@@ -50,7 +51,7 @@ A change is not done until:
 
 - New features and bug fixes come with tests.
 - `./mvnw test` passes for API changes.
-- `npm run lint && npm run build` passes for UI changes.
+- `npm run lint && npm run build && npm test` passes for UI changes.
 
 If a check can't be run, say so explicitly. Never claim it passed.
 
@@ -105,12 +106,3 @@ If a check can't be run, say so explicitly. Never claim it passed.
 - Use **Conventional Commits**: `feat(api): ...`, `fix(ui): ...`, `chore: ...`, `test(api): ...`, `docs: ...`.
 - Changes inside a submodule must be committed **in that submodule's repo**. Then commit the updated submodule pointer in the root repo.
 - Don't commit build output (`target/`, `dist/`, `node_modules/`).
-
-## Known issues (as of 2026-10-05)
-
-Check these before trusting the Docker setup. Wave 0 (`plans/wave-0-foundations.md`) fixes them.
-
-- `AI-Task-Manager-UI/Dockerfile` copies `nginx.conf`, but that file doesn't exist.
-- `V1__create-tables.sql`: the missing comma before `CONSTRAINT PK_TASK_SUBTASK` is fixed but not yet committed in the API repo.
-- `application.properties` uses `flyway.*` and `gemini.*` keys that Spring Boot and Spring AI don't read.
-- Spring Security's default config blocks `/actuator/health`, so the API healthcheck fails.

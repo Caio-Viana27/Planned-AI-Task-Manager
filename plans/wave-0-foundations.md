@@ -1,6 +1,6 @@
 # Wave 0: Foundations
 
-**Status:** draft · **PLAN:** §0, §7, §8, §9 phase 0
+**Status:** done (2026-10-06) · **PLAN:** §0, §7, §8, §9 phase 0
 
 ## Goal
 
