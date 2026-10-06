@@ -96,7 +96,7 @@ If a check can't be run, say so explicitly. Never claim it passed.
 ## Configuration and secrets
 
 - Secrets and env vars live in a git-ignored **`.env` at the repo root**, read by docker-compose. Keep a committed `.env.example` up to date with every variable (no real values).
-- Variables: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `TASK_MANAGER_DB_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `JWT_SECRET`, `APP_TIMEZONE`. `.env.example` describes each one.
+- Variables: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `TASK_MANAGER_DB_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `JWT_SECRET`, `APP_TIMEZONE`, and the optional UI build-time `VITE_API_URL`. `.env.example` describes each one.
 - Never commit secrets or print them in logs.
 
 ## Git workflow
