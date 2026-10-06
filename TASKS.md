@@ -41,12 +41,12 @@ Several parallel tasks have to touch the same files. The rules for each:
 
 | File | Rule |
 |---|---|
-| `pom.xml`, `package.json` | Only Wave 0 tasks and T5.2 add dependencies. Any other task that needs one stops and asks the orchestrator. |
+| `pom.xml`, `package.json` | Only Wave 0 tasks, T1.2 (the OAuth2 resource server starter), and T5.2 add dependencies. Any other task that needs one stops and asks the orchestrator. |
 | `exception/ErrorCode.java` | Every code in PLAN §2 is created up front in T0.4. Later tasks only *use* the codes. |
-| `application.properties` | T0.2 adds every property the plan needs, including AI, JWT, and timezone. Later tasks only read them. |
-| UI locale files `src/i18n/locales/{en,pt-BR}/*.json` | One **namespace file per feature** (`auth.json`, `tasks.json`, `ai.json`, `aiBreakdown.json`, `chat.json`, `passwordReset.json`, `errors.json`), so parallel tasks don't touch the same file. `errors.json` (all error codes) is created up front in T0.3. |
-| UI router `src/routes/router.tsx` | T0.3 creates every route as a placeholder page. Feature tasks replace their own page files and never edit the router. |
-| `config/SecurityConfig.java` | T1.2 owns this file. T5.2 is the only later task that may touch it, to make the reset endpoints public. |
+| `application.properties` | T0.2 adds every property the plan needs, including AI, JWT, and timezone. T1.1 adds the two Hibernate timestamp properties (wave 1 plan, D3). Later tasks only read them. |
+| UI locale files `src/i18n/locales/{en,pt-BR}/*.json` | One **namespace file per feature** (`auth.json`, `tasks.json`, `ai.json`, `aiBreakdown.json`, `chat.json`, `passwordReset.json`, `errors.json`), so parallel tasks don't touch the same file. `errors.json` (all error codes) is created up front in T0.3. T1.7 adds `auth.json` and registers it in `src/i18n/index.ts`, `i18next.d.ts`, and `locales.test.ts`; later namespaces are registered the same way. |
+| UI router `src/routes/router.tsx` | T0.3 creates every route as a placeholder page. T1.5 wraps the routes in a root auth route. Other feature tasks replace their own page files and never edit the router. |
+| `config/SecurityConfig.java` | T1.3 owns this file. T5.2 is the only later task that may touch it, to make the reset endpoints public. |
 
 ### Definition of done for every task
 
@@ -69,7 +69,7 @@ Tasks in the same wave can run in parallel once their dependencies are merged.
 ```
 Wave 0  T0.1 (root) · T0.2 (API) · T0.3 (UI)
         T0.4 (API, after T0.2)
-Wave 1  T1.1 (API) → T1.2 (API) → T1.3 (API)        ‖ T1.4 (UI)
+Wave 1  T1.1 → T1.2 → T1.3 → T1.4 (API)  ‖  T1.5 → T1.6 → T1.7 (UI)   (see plans/wave-1-auth.md)
 Wave 2  T2.1 (API) → T2.2 (API) → { T2.3, T2.4, T2.5 } (API)
         T2.6 (UI) → { T2.7, T2.8 } (UI)
 Wave 3  T3.1 (API) → { T3.2, T3.3 } (API)
@@ -186,76 +186,17 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
 
 ## Wave 1: Auth (PLAN §3)
 
-### T1.1 API: user and role persistence
-- **Repo:** API · **Depends on:** T0.2 · **PLAN:** §3, §0 (Roles, User name)
-- **Scope:**
-  - `entity/Role` and `entity/User`. `User` maps to `USERS`, with a UUID id and `createdAt`/`updatedAt` set from the `Clock`.
-  - `repository/RoleRepository` with `findByName`.
-  - `repository/UserRepository` with `findByEmailIgnoreCase` and `existsByEmailIgnoreCase`.
-  - Lowercase emails before saving.
-- **Acceptance:** repository tests (Testcontainers) can save a user with role `USER` and find it by email in any letter case. `ddl-auto=validate` passes.
-- **Verify:** `./mvnw test`
-- **Commit:** `feat(api): add user and role entities and repositories`
+The task cards for this wave live in [`plans/wave-1-auth.md`](plans/wave-1-auth.md), together with its decisions (D1–D7). That plan replaces the cards that used to be here. `T1.n` anywhere in this file means task 1.n of that plan:
 
-### T1.2 API: JWT security
-- **Repo:** API · **Depends on:** T0.4, T1.1 · **PLAN:** §0 (Logout, JWT), §2 (401)
-- **Scope:**
-  - `service/JwtService`: issues HS256 tokens with `sub`, `email`, `roles`, `exp`, using `NimbusJwtEncoder` and the secret from `app.jwt.secret`. Fail at startup if the secret is shorter than 32 bytes.
-  - `config/SecurityConfig`:
-    - stateless, CSRF off, CORS on
-    - OAuth2 resource server with `NimbusJwtDecoder`; the `roles` claim becomes authorities `ROLE_*`
-    - public: `POST /api/v1/auth/signup`, `POST /api/v1/auth/signin`, `/swagger-ui/**`, `/v3/api-docs/**`
-    - everything else requires authentication
-    - an entry point and access-denied handler that write a `ProblemDetail` with code `UNAUTHORIZED`
-  - `service/CurrentUserService` (or a resolver): returns the authenticated user's UUID from `sub`.
-  - `PasswordEncoder`: BCrypt.
-- **Acceptance:** tests show:
-  - no token → 401 `UNAUTHORIZED`
-  - expired token (fixed `Clock`) → 401
-  - tampered token → 401
-  - valid token → passes through
-- **Verify:** `./mvnw test`
-- **Commit:** `feat(api): add stateless jwt security`
-
-### T1.3 API: auth endpoints
-- **Repo:** API · **Depends on:** T1.2 · **PLAN:** §3 (BDD and endpoints except Phase 5)
-- **Scope:**
-  - `dto/` records: `SignUpRequest` (email, name, password of at least 8 characters), `SignInRequest`, `AuthResponse { token, expiresAt, user }`, `UserResponse`.
-  - `service/AuthService`.
-  - `controller/AuthController` for `/api/v1/auth/signup` and `/signin`.
-  - `controller/UserController` for `GET /api/v1/users/me`.
-  - OpenAPI annotations on the controllers.
-- **Acceptance:** one integration test per scenario in §3:
-  - sign-up success (201, the token works on `/users/me`)
-  - duplicate email (409 `EMAIL_ALREADY_USED`, also with different letter case)
-  - invalid fields (400 `VALIDATION_ERROR` with field errors)
-  - sign-in success
-  - wrong password and unknown email return the same 401 `BAD_CREDENTIALS` body
-  - `/users/me` without a token → 401
-  - the stored password is a BCrypt hash
-- **Verify:** `./mvnw test`
-- **Commit:** `feat(api): add sign-up, sign-in and current-user endpoints`
-
-### T1.4 UI: auth flow
-- **Repo:** UI · **Depends on:** T0.3 · **PLAN:** §3, §6 (Auth)
-- **Scope:**
-  - `src/api/auth.ts` with `signUp`, `signIn`, and `getMe`, plus their types.
-  - `src/auth/AuthProvider.tsx`:
-    - holds the token and user
-    - `login(token)` and `logout()`; logout clears the token and calls `queryClient.clear()`
-    - registers the 401 handler, which logs out and redirects to `/login?expired=1`
-  - A real `ProtectedRoute`.
-  - `LoginPage` and `SignupPage`, with field errors taken from `ApiError.errors`.
-  - A logout button in `AppLayout`.
-  - i18n in `auth.json`, for both locales.
-- **Acceptance:** component tests:
-  - login success stores the token and navigates to `/`
-  - a 401 `BAD_CREDENTIALS` shows a localized message
-  - signup shows the 409 error on the email field
-  - a protected route redirects when there is no token
-  - the expired-session banner shows
-- **Verify:** `npm run lint && npm run build && npm test`
-- **Commit:** `feat(ui): add login, signup, logout and protected routes`
+| ID | Task | Repo |
+|---|---|---|
+| T1.1 | User and role persistence, plus the case-insensitive email migration | API |
+| T1.2 | JWT issuing and decoding | API |
+| T1.3 | JWT security (owns `SecurityConfig`) | API |
+| T1.4 | Auth and current-user endpoints | API |
+| T1.5 | Auth API and session provider | UI |
+| T1.6 | Protected routes and session-aware header | UI |
+| T1.7 | Login and signup pages | UI |
 
 ## Wave 2: Tasks (PLAN §1, §2, §4)
 
@@ -278,7 +219,7 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
 - **Commit:** `feat(api): add task schema migration, task and lookup entities, lookups endpoint`
 
 ### T2.2 API: task CRUD
-- **Repo:** API · **Depends on:** T1.2, T2.1 · **PLAN:** §2 (all), §4 (create, view, edit, status change, delete)
+- **Repo:** API · **Depends on:** T1.3, T2.1 · **PLAN:** §2 (all), §4 (create, view, edit, status change, delete)
 - **Scope:**
   - DTOs: `CreateTaskRequest`, `UpdateTaskRequest` (PUT, all fields), `PatchTaskRequest` (all fields optional; use a `JsonNullable` or a presence-tracking approach so that `dueDate: null` clears the date), `TaskResponse`, and `SubtaskSummary`.
   - `service/TaskService`:
@@ -348,7 +289,7 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
 - **Commit:** `feat(api): add scheduled overdue task job`
 
 ### T2.6 UI: task API layer and shared components
-- **Repo:** UI · **Depends on:** T1.4 · **PLAN:** §2 (Task object), §4 (endpoints)
+- **Repo:** UI · **Depends on:** T1.7 · **PLAN:** §2 (Task object), §4 (endpoints)
 - **Scope:**
   - `src/api/tasks.ts`: types for `Task`, `PageResponse`, and `TaskFilters`, plus functions for every task, subtask, and lookup endpoint.
   - `src/api/queries/tasks.ts`: TanStack Query hooks with query-key conventions (`['tasks', filters]`, `['task', id]`, `['lookups']`). Mutations invalidate the affected keys.
@@ -398,7 +339,7 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
 ## Wave 3: AI suggest and breakdown (PLAN §5)
 
 ### T3.1 API: AI foundation
-- **Repo:** API · **Depends on:** T0.4, T1.2 · **PLAN:** §5 (Shared rules)
+- **Repo:** API · **Depends on:** T0.4, T1.3 · **PLAN:** §5 (Shared rules)
 - **Owns:** `service/ai/AiClient`, `service/ai/AiQuotaService`, `config/AiConfig`, and `src/main/resources/prompts/`.
 - **Scope:**
   - `AiClient`: the **only** class that uses `ChatClient`. It exposes a generic `<T> T call(String systemPrompt, Map<String,Object> userData, Class<T> type, Locale locale)`, which:
@@ -501,7 +442,7 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
 - **Commit:** `feat(api): add read-only chat assistant endpoint`
 
 ### T4.2 UI: chat panel
-- **Repo:** UI · **Depends on:** T1.4 (layout slot) · **PLAN:** §5 (Chat scenario), §6
+- **Repo:** UI · **Depends on:** T1.6 (layout slot) · **PLAN:** §5 (Chat scenario), §6
 - **Owns:** `src/api/chat.ts`, `src/features/chat/**`, and `chat.json`.
 - **Scope:**
   - A collapsible side panel in the `AppLayout` slot.
@@ -527,7 +468,7 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
 - **Commit:** `chore: add mailpit and mail env vars`
 
 ### T5.2 API: password reset
-- **Repo:** API · **Depends on:** T1.3, T5.1 · **PLAN:** §3 (Reset password scenario and endpoints)
+- **Repo:** API · **Depends on:** T1.4, T5.1 · **PLAN:** §3 (Reset password scenario and endpoints)
 - **Scope:**
   - Add the `spring-boot-starter-mail` dependency.
   - A new migration for the `PASSWORD_RESET_TOKEN` table.
@@ -552,7 +493,7 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
 - **Commit:** `feat(api): add password reset flow`
 
 ### T5.3 UI: password reset pages
-- **Repo:** UI · **Depends on:** T1.4 · **Parallel with:** T5.2 · **PLAN:** §3, §6
+- **Repo:** UI · **Depends on:** T1.7 · **Parallel with:** T5.2 · **PLAN:** §3, §6
 - **Owns:** `ForgotPasswordPage`, `ResetPasswordPage`, `src/api/passwordReset.ts`, and a new `src/i18n/locales/{en,pt-BR}/passwordReset.json`.
 - **Scope:**
   - The forgot page always shows a neutral "if the email exists, we sent a link" message.

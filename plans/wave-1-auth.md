@@ -255,5 +255,4 @@ Run them in order, one at a time. Review and merge each before starting the next
 ## After this wave
 
 - Add the D5 field limits and the D4 case-insensitive email rule to PLAN §3, and the D3 timestamp rule to `AGENTS.md` (API conventions).
-- Update the hotspot table in `TASKS.md`: Wave 1 added a dependency (D1), two properties (D3), a migration (D4), the root auth route, and the `auth` namespace.
 - Mark this plan as done.
