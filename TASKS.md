@@ -172,6 +172,8 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
     - `HandlerMethodValidationException`
     - `MethodArgumentTypeMismatchException`
     - unreadable request bodies
+    - Spring MVC's own errors (405, 415, missing parameters, ...), with a `code` from their status
+    - any other exception, as a generic 500 `INTERNAL_ERROR` that is logged but never exposed
   - `config/AppProperties`: a `@ConfigurationProperties` record for `app.*`.
   - A `Clock` bean in `app.timezone`, injected everywhere a "now" or "today" is needed.
   - `config/OpenApiConfig`: a bearer JWT security scheme.

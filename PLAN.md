@@ -96,6 +96,11 @@ Every error uses RFC 9457 `ProblemDetail`, plus a `code` property in English and
 | 422 | `AI_INVALID_RESPONSE` | The model's output can't be parsed or validated |
 | 429 | `AI_RATE_LIMITED` | The per-user AI quota is exceeded |
 | 503 | `AI_UNAVAILABLE` | Gemini timed out, rate-limited us, or is offline |
+| 405 | `METHOD_NOT_ALLOWED` | The endpoint doesn't support the HTTP method |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | The request body isn't JSON |
+| 500 | `INTERNAL_ERROR` | An unexpected server error. The response never includes the cause. |
+
+Errors that Spring MVC raises itself get a `code` from their status: 400 → `VALIDATION_ERROR` (e.g. a missing required parameter), 405, 415, and 500 as above.
 
 ## 3. Authentication features
 

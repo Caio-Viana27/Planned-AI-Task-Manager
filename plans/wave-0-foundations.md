@@ -101,8 +101,8 @@ Run them in order, one at a time. Review and merge each before starting the next
 - **Changes:**
   - `exception/ErrorCode`: an enum with every code in PLAN §2, each with its HTTP status.
   - `exception/ApiException`, which carries an `ErrorCode`.
-  - `exception/GlobalExceptionHandler` (`@RestControllerAdvice`). It returns a `ProblemDetail` with a `code` property and, for validation failures, an `errors: [{field, message}]` list. It handles `ApiException`, `MethodArgumentNotValidException`, `HandlerMethodValidationException`, `MethodArgumentTypeMismatchException`, and unreadable bodies.
-- **Acceptance:** a test controller in `src/test` triggers each exception type, and the tests check the status, `code`, and `errors`.
+  - `exception/GlobalExceptionHandler` (`@RestControllerAdvice`). It returns a `ProblemDetail` with a `code` property and, for validation failures, an `errors: [{field, message}]` list. It handles `ApiException`, `MethodArgumentNotValidException`, `HandlerMethodValidationException`, `MethodArgumentTypeMismatchException`, and unreadable bodies. Spring MVC's own errors (405, 415, missing parameters) get a `code` from their status, and any other exception becomes a logged, generic 500 `INTERNAL_ERROR`.
+- **Acceptance:** a test controller in `src/test` triggers each exception type, including 405, 415, and 500, and the tests check the status, `code`, and `errors`.
 - **Commit:** `feat(api): add problem-detail error handling`
 
 ### 0.6 API: app config beans
