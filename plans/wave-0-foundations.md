@@ -146,7 +146,7 @@ Run them in order, one at a time. Review and merge each before starting the next
 
 - **Repo:** UI · **PLAN:** §6
 - **Changes:**
-  - `src/i18n/index.ts`, plus `src/i18n/locales/{en,pt-BR}/{common,errors}.json`. `errors.json` has a key for every code in PLAN §2.
+  - `src/i18n/index.ts`, plus `src/i18n/locales/{en,pt-BR}/{common,errors}.json`. `errors.json` has a key for every code in PLAN §2, plus a generic fallback for errors without a `code` (e.g. a 502 from nginx while the API is down, where the client sets `code` to `null`).
   - `src/routes/router.tsx` with every route from PLAN §6, each pointing to a placeholder in `src/pages/*Page.tsx`.
   - A `ProtectedRoute` stub that renders its children (Wave 1 makes it real).
   - `AppLayout` with a header, an EN / PT-BR language switcher, and an empty slot for the chat panel.
