@@ -264,7 +264,7 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
   - Only the requesting user's own tasks are ever placed in a prompt.
 - **Context:** every prompt includes today's date and `app.timezone`, plus the user's locale (`Accept-Language`, `en` or `pt-BR`). Generated text is written in that language.
 - **Accepting suggestions:** AI endpoints never write to the database. The user saves accepted suggestions through the normal task endpoints.
-- **Config:** `GEMINI_API_KEY` and `GEMINI_MODEL` go in `.env` and are listed in `.env.example`.
+- **Config:** the vendor-neutral `AI_PROVIDER`, `AI_MODEL`, `AI_API_KEY`, and `AI_BASE_URL` go in `.env` and are listed in `.env.example` (wave 3 plan, D10). Gemini (`google-genai`) is the only provider built in.
 
 ### BDD use cases
 
@@ -322,7 +322,7 @@ All of this follows the conventions in `AGENTS.md`: React Router, TanStack Query
 
 ## 7. Configuration
 
-- New env vars, added to `.env.example`: `JWT_SECRET`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `APP_TIMEZONE`.
+- New env vars, added to `.env.example`: `JWT_SECRET`, `AI_PROVIDER`, `AI_MODEL`, `AI_API_KEY`, `AI_BASE_URL`, `APP_TIMEZONE`.
 - Phase 5 adds `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM`, and `APP_BASE_URL`.
 - `application.properties` gets the datasource, Flyway location (`classpath:db/migration/postgres`), Spring AI Google GenAI settings, CORS for `http://localhost:5173`, and `app.tasks.max-depth=5` (not an env var).
 

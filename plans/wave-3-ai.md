@@ -17,7 +17,7 @@ A logged-in user can ask the AI to improve a task. Gemini rewrites the title and
 
 ## Decisions for this wave
 
-Confirmed by the maintainer on 2026-10-07. D1, D2, D5, and D7 change PLAN wording, so the orchestrator folds them into PLAN after the wave. Details below the table.
+Confirmed by the maintainer on 2026-10-07. D10 was added and confirmed the same day as an addendum. D1, D2, D5, and D7 change PLAN wording, so the orchestrator folds them into PLAN after the wave (D10 is already in PLAN §5 and §7). Details below the table.
 
 | # | Decision | Outcome |
 |---|---|---|
@@ -30,13 +30,14 @@ Confirmed by the maintainer on 2026-10-07. D1, D2, D5, and D7 change PLAN wordin
 | D7 | Accepting a suggestion fills the form | In both create and edit mode, accepting writes the chosen fields into `TaskForm`, and the user saves as usual (`POST`, or `PATCH` with the changed fields). The AI flow never calls `PATCH` itself. See below. |
 | D8 | Breakdown context | The prompt gets the task's title and description, its ancestors' titles (root first), and its current direct subtasks' titles, so drafts don't repeat existing work. Still 2–8 drafts. |
 | D9 | AI calls in the UI | AI requests are TanStack mutations: never cached, never auto-retried (each try costs quota), and the trigger button is disabled while one is in flight. |
+| D10 | Vendor-neutral env vars (addendum) | `GEMINI_API_KEY` and `GEMINI_MODEL` become `AI_PROVIDER`, `AI_MODEL`, `AI_API_KEY`, and `AI_BASE_URL`. `AI_PROVIDER` selects the Spring AI chat provider. Gemini is the only one built in, and adding another is a short checklist. See below. |
 
 ### D1: provider-neutral AI client
 
 - **Structured output** uses `ChatClient`'s `.entity(Class<T>)` (Spring AI's `BeanOutputConverter`), which works with any provider. Don't use Gemini-only options such as a native response schema or `GoogleGenAiChatOptions`.
 - **Error classification** lives in one private method, `AiClient.isTransient(Throwable)`. It's the only code that knows provider exception types: it walks the cause chain for Spring AI's `TransientAiException`, an I/O error, or a provider exception carrying HTTP status 429 or 5xx (e.g. the Google GenAI SDK's `ApiException.code()`).
 - **Feature services** (`TaskSuggestionService`, `TaskBreakdownService`, and Wave 4's chat) depend only on `AiClient` and their own records.
-- **Changing the model:** another Gemini model needs only `GEMINI_MODEL`. Another provider means swapping the starter, the `spring.ai.*` properties, and `isTransient`, with no change to feature services or tests (they mock `ChatModel`). The env var names stay `GEMINI_*` for now.
+- **Changing the model or vendor:** another model needs only `AI_MODEL`. Another vendor follows D10, with no change to feature services or tests (they mock `ChatModel`).
 
 ### D2: retry and timeout
 
@@ -83,11 +84,32 @@ PLAN §5 and the old T3.4 card said that accepting on a saved task calls `PATCH`
 - There is one write path, and it already sends only changed fields and handles `OVERDUE` (wave 2, D6).
 - A suggestion the user accepts but doesn't save is simply lost when they leave, like any other unsaved edit.
 
+### D10: vendor-neutral env vars
+
+The AI env vars no longer name a vendor. A model never needs its own variable: `AI_MODEL` holds whatever name the active vendor accepts.
+
+| Var | Meaning | Default |
+|---|---|---|
+| `AI_PROVIDER` | Spring AI chat provider id, mapped to `spring.ai.model.chat` | `google-genai` |
+| `AI_MODEL` | Model name for the active provider, e.g. `gemini-2.5-flash` | none (required) |
+| `AI_API_KEY` | Key for providers that need one (Gemini) | none |
+| `AI_BASE_URL` | Endpoint for self-hosted providers (Ollama); unused by Gemini | empty |
+
+- `application.properties` maps the variables onto each built-in provider's properties: `spring.ai.model.chat=${AI_PROVIDER:google-genai}`, `spring.ai.google.genai.api-key=${AI_API_KEY}`, and `spring.ai.google.genai.chat.model=${AI_MODEL}`. Spring AI 2.0.1 turns on only the auto-configuration whose id matches `spring.ai.model.chat` (checked in `GoogleGenAiChatAutoConfiguration`).
+- This was done before T3.1, together with the root renames, so `docker compose up` never sees a mix of old and new names. It's an approved exception to the `application.properties` hotspot rule.
+- **Adding Ollama later** (not done now; no Ollama container in compose):
+  1. Add `spring-ai-starter-model-ollama` to `pom.xml` (an exception to the `pom.xml` hotspot rule, so ask the maintainer).
+  2. Add `spring.ai.ollama.base-url=${AI_BASE_URL:http://localhost:11434}` and Ollama's chat-model property set to `${AI_MODEL}` (check the exact name in Spring AI 2.0, e.g. `spring.ai.ollama.chat.model`).
+  3. Make sure `AiClient.isTransient` (D1) recognizes Ollama's connection and 5xx errors, with a test.
+  4. Then switching is `.env` only: `AI_PROVIDER=ollama`, `AI_MODEL=llama3.1:8b`, `AI_BASE_URL=http://host.docker.internal:11434`.
+
+  Other vendors (OpenAI, Anthropic, …) follow the same steps with their own starter and properties.
+
 ## Current state
 
 After Wave 2:
 
-- API: `AppProperties.Ai(timeout, quotaPerHour)` is bound, with `app.ai.timeout=20s` and `app.ai.quota-per-hour=30`. `spring.ai.google.genai.api-key` and `.chat.model` are read from `GEMINI_API_KEY` and `GEMINI_MODEL`. The test profile has a fake key and model.
+- API: `AppProperties.Ai(timeout, quotaPerHour)` is bound, with `app.ai.timeout=20s` and `app.ai.quota-per-hour=30`. `spring.ai.google.genai.api-key` and `.chat.model` are read from `AI_API_KEY` and `AI_MODEL`, and `spring.ai.model.chat` from `AI_PROVIDER` (D10). The test profile has a fake key and model.
 - API: `ErrorCode` already has `AI_INVALID_RESPONSE` (422), `AI_RATE_LIMITED` (429), and `AI_UNAVAILABLE` (503). `GlobalExceptionHandler` turns `ApiException` into a ProblemDetail.
 - API: `support/IntegrationTest` already declares `@MockitoBean ChatModel chatModel`, so every integration test runs with the model mocked. `MutableClock`, `TestRows`, and `JwtTestSupport` exist.
 - API: `TaskService` exposes `loadOwned`, `depth`, `canAddSubtasks`, and `requireCanAddSubtasks` (wave 2, D1). `TaskRepository` has the ancestors query. `LookupService` resolves names.
@@ -160,7 +182,7 @@ API track: 3.1 → 3.2, 3.3. UI track: 3.4 → 3.5. The UI codes against PLAN §
 - **Verify:** `./mvnw test`
 - **Commit:** `feat(api): add ai subtask breakdown endpoint`
 
-> **Checkpoint A:** `docker compose up --build task-manager-db task-manager-api` with a real `GEMINI_API_KEY`. In Swagger UI, call `/ai/suggest` with `Accept-Language: pt-BR` and get Portuguese text; break down a task and get 2–8 drafts; call suggest 31 times and get `429`. Without a key, mark this checkpoint skipped, never passed.
+> **Checkpoint A:** `docker compose up --build task-manager-db task-manager-api` with a real `AI_API_KEY`. In Swagger UI, call `/ai/suggest` with `Accept-Language: pt-BR` and get Portuguese text; break down a task and get 2–8 drafts; call suggest 31 times and get `429`. Without a key, mark this checkpoint skipped, never passed.
 
 ### 3.4 UI: AI suggest UX
 

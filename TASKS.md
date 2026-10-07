@@ -43,7 +43,7 @@ Several parallel tasks have to touch the same files. The rules for each:
 |---|---|
 | `pom.xml`, `package.json` | Only Wave 0 tasks, T1.2 (the OAuth2 resource server starter), and T5.2 add dependencies. Any other task that needs one stops and asks the orchestrator. |
 | `exception/ErrorCode.java` | Every code in PLAN §2 is created up front in T0.4. Later tasks only *use* the codes. |
-| `application.properties` | T0.2 adds every property the plan needs, including AI, JWT, and timezone. T1.1 adds the two Hibernate timestamp properties (wave 1 plan, D3). T2.1 adds `app.tasks.max-depth=5` and its `AppProperties` binding. T3.1 adds `spring.ai.retry.max-attempts=1` (wave 3 plan, D2). Later tasks only read them. |
+| `application.properties` | T0.2 adds every property the plan needs, including AI, JWT, and timezone. T1.1 adds the two Hibernate timestamp properties (wave 1 plan, D3). T2.1 adds `app.tasks.max-depth=5` and its `AppProperties` binding. T3.1 adds `spring.ai.retry.max-attempts=1` (wave 3 plan, D2). The wave 3 D10 change maps the `AI_*` env vars. Later tasks only read them. |
 | UI locale files `src/i18n/locales/{en,pt-BR}/*.json` | One **namespace file per feature** (`auth.json`, `tasks.json`, `ai.json`, `aiBreakdown.json`, `chat.json`, `passwordReset.json`, `errors.json`), so parallel tasks don't touch the same file. `errors.json` (all error codes) is created up front in T0.3. T1.7 adds `auth.json` and registers it in `src/i18n/index.ts`, `i18next.d.ts`, and `locales.test.ts`; later namespaces are registered the same way. |
 | UI router `src/routes/router.tsx` | T0.3 creates every route as a placeholder page. T1.5 wraps the routes in a root auth route. Other feature tasks replace their own page files and never edit the router. |
 | `config/SecurityConfig.java` | T1.3 owns this file. T5.2 is the only later task that may touch it, to make the reset endpoints public. |
@@ -93,7 +93,7 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
     - Rename `service:` to `services:`.
     - Rename the API service `user-service-api` to `task-manager-api`.
     - Point the UI service build at `./AI-Task-Manager-UI`.
-    - Pass `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`, `JWT_SECRET`, `GEMINI_API_KEY`, `GEMINI_MODEL`, and `APP_TIMEZONE` to the API.
+    - Pass `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`, `JWT_SECRET`, `GEMINI_API_KEY`, `GEMINI_MODEL`, and `APP_TIMEZONE` to the API. (Wave 3, D10, later renamed the AI variables to `AI_*`.)
     - Healthcheck: `pg_isready -U $${POSTGRES_USER} -d task_manager_db`.
     - Postgres 18 volume: mount `/var/lib/postgresql`, which is the PG18 image layout.
     - The UI depends on the API.
@@ -116,7 +116,7 @@ UI tasks can run alongside API tasks in the same phase, because they code agains
     - `spring.jpa.hibernate.ddl-auto=validate`
     - `spring.jpa.open-in-view=false`
     - Flyway location `classpath:db/migration/postgres`
-    - Spring AI Google GenAI: API key `${GEMINI_API_KEY}`, model `${GEMINI_MODEL:gemini-2.5-flash}`
+    - Spring AI Google GenAI: API key `${GEMINI_API_KEY}`, model `${GEMINI_MODEL:gemini-2.5-flash}` (renamed to `AI_*` in wave 3, D10)
     - `app.timezone=${APP_TIMEZONE:America/Sao_Paulo}`
     - `app.jwt.secret=${JWT_SECRET}`, `app.jwt.ttl=60m`
     - `app.ai.timeout=20s`, `app.ai.quota-per-hour=30`
@@ -326,7 +326,7 @@ The task cards for this wave live in [`plans/wave-3-ai.md`](plans/wave-3-ai.md),
     - chat
     - logout
     - the PT-BR switch
-  - AI steps need a real `GEMINI_API_KEY`. If none is available, say so and mark them as skipped, never as passed.
+  - AI steps need a real `AI_API_KEY`. If none is available, say so and mark them as skipped, never as passed.
   - Update `AGENTS.md`:
     - env var list
     - `npm test` command
