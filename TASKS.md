@@ -43,7 +43,7 @@ Several parallel tasks have to touch the same files. The rules for each:
 |---|---|
 | `pom.xml`, `package.json` | Only Wave 0 tasks, T1.2 (the OAuth2 resource server starter), and T5.2 add dependencies. Any other task that needs one stops and asks the orchestrator. |
 | `exception/ErrorCode.java` | Every code in PLAN §2 is created up front in T0.4. Later tasks only *use* the codes. |
-| `application.properties` | T0.2 adds every property the plan needs, including AI, JWT, and timezone. T1.1 adds the two Hibernate timestamp properties (wave 1 plan, D3). Later tasks only read them. |
+| `application.properties` | T0.2 adds every property the plan needs, including AI, JWT, and timezone. T1.1 adds the two Hibernate timestamp properties (wave 1 plan, D3). T2.1 adds `app.tasks.max-depth=5` and its `AppProperties` binding. Later tasks only read them. |
 | UI locale files `src/i18n/locales/{en,pt-BR}/*.json` | One **namespace file per feature** (`auth.json`, `tasks.json`, `ai.json`, `aiBreakdown.json`, `chat.json`, `passwordReset.json`, `errors.json`), so parallel tasks don't touch the same file. `errors.json` (all error codes) is created up front in T0.3. T1.7 adds `auth.json` and registers it in `src/i18n/index.ts`, `i18next.d.ts`, and `locales.test.ts`; later namespaces are registered the same way. |
 | UI router `src/routes/router.tsx` | T0.3 creates every route as a placeholder page. T1.5 wraps the routes in a root auth route. Other feature tasks replace their own page files and never edit the router. |
 | `config/SecurityConfig.java` | T1.3 owns this file. T5.2 is the only later task that may touch it, to make the reset endpoints public. |
@@ -204,15 +204,19 @@ The task cards for this wave live in [`plans/wave-1-auth.md`](plans/wave-1-auth.
 - **Repo:** API · **Depends on:** T1.1 · **PLAN:** §1, §2 (Task object, Validation), §4 (`GET /lookups`)
 - **Scope:**
   - A new migration for the task schema, exactly as described in PLAN §1.
-  - Entities: `Priority`, `TaskStatus`, `Complexity`, and `Task`. `Task` has a `ManyToOne` to user and the lookups, and a `parent` mapped through the `TASK_SUBTASK` join table (`@JoinTable` with a unique subtask).
-  - Repositories for each.
+  - Entities: `Priority`, `TaskStatus`, `Complexity`, and `Task`. `Task` has a `ManyToOne` to user and the lookups, and a lazy `@ManyToOne parent` mapped to the `PARENT_TASK_ID` column. There are no separate parent or subtask classes.
+  - `app.tasks.max-depth=5` in `application.properties`, bound as `AppProperties.Tasks.maxDepth`.
+  - Repositories for each. `TaskRepository` gets a recursive-CTE query returning a task's ancestors (`id`, `title`), root first.
   - `service/LookupService`:
     - resolves a name to an entity, throwing `INVALID_PRIORITY`, `INVALID_STATUS`, or `INVALID_COMPLEXITY`
     - caches the lookups
   - `controller/LookupController` for `GET /api/v1/lookups`.
 - **Acceptance:**
   - Migration test: every migration applies.
-  - These all fail at the DB level: a blank title, a subtask with two parents, and a task that is its own parent.
+  - These fail at the DB level: a blank title, and a task that is its own parent.
+  - `TASK_SUBTASK` no longer exists.
+  - Deleting a top-level task with `JdbcTemplate` removes a 3-level subtree below it (the FK cascade).
+  - The ancestors query returns the path root first, and nothing for a top-level task.
   - The lookups endpoint returns the seeded names in seed order.
   - An unknown name produces the right error code.
 - **Verify:** `./mvnw test`
@@ -221,21 +225,23 @@ The task cards for this wave live in [`plans/wave-1-auth.md`](plans/wave-1-auth.
 ### T2.2 API: task CRUD
 - **Repo:** API · **Depends on:** T1.3, T2.1 · **PLAN:** §2 (all), §4 (create, view, edit, status change, delete)
 - **Scope:**
-  - DTOs: `CreateTaskRequest`, `UpdateTaskRequest` (PUT, all fields), `PatchTaskRequest` (all fields optional; use a `JsonNullable` or a presence-tracking approach so that `dueDate: null` clears the date), `TaskResponse`, and `SubtaskSummary`.
+  - DTOs: `CreateTaskRequest`, `UpdateTaskRequest` (PUT, all fields), `PatchTaskRequest` (all fields optional; use a `JsonNullable` or a presence-tracking approach so that `dueDate: null` clears the date), `TaskResponse` (with `ancestors` and `canAddSubtasks`), `AncestorSummary`, and `SubtaskSummary` (with `subtaskCount`). See PLAN §2.
   - `service/TaskService`:
     - Ownership checks: another user's task → 404 `TASK_NOT_FOUND`.
     - Defaults from PLAN §2.
     - Status rules from §2:
       - a user may not set `OVERDUE`
       - on an `OVERDUE` task, a `dueDate` change to today or later, or clearing it, resets the status to `TODO`
-    - Delete removes the task and its subtasks in one transaction.
-  - `controller/TaskController`: `POST`, `GET /{id}` (with subtasks), `PUT`, `PATCH`, and `DELETE`. Add a `Location` header on create.
+    - Delete removes the task and its whole subtree in one transaction, relying on the FK cascade (no tree walk in Java).
+    - A shared depth helper (`depth = ancestors + 1`, `canAddSubtasks = depth < maxDepth`), which T2.4 and T3.3 reuse.
+  - `controller/TaskController`: `POST`, `GET /{id}` (with ancestors and direct subtasks), `PUT`, `PATCH`, and `DELETE`. Add a `Location` header on create.
 - **Acceptance:** integration tests for every §4 scenario except filter and subtask creation, plus:
   - user B gets 404 on user A's task for GET, PUT, PATCH, and DELETE
   - `OVERDUE` → 400 `INVALID_STATUS`
   - the OVERDUE reset rule
   - DONE → TODO is allowed
-  - deleting a parent also deletes its subtasks (insert links directly in the test setup)
+  - deleting a task also deletes its children and grandchildren (insert rows directly in the test setup)
+  - `GET /tasks/{id}` on a depth-3 task returns 2 ancestors root first, only its direct subtasks with correct `subtaskCount`s, and `canAddSubtasks: true`; on a depth-5 task, `canAddSubtasks: false`
 - **Verify:** `./mvnw test`
 - **Commit:** `feat(api): add task crud with ownership and status rules`
 
@@ -248,7 +254,7 @@ The task cards for this wave live in [`plans/wave-1-auth.md`](plans/wave-1-auth.
   - Sorting only on the allowed fields, otherwise 400.
   - `size` capped at 100.
   - A `PageResponse<T>` record with the shape from PLAN §4.
-  - `includeSubtasks=false` leaves out tasks that have a parent.
+  - `includeSubtasks=false` leaves out tasks that have a parent; `true` includes tasks at every depth.
 - **Acceptance:** tests for:
   - each filter alone and combined
   - repeated `status` values
@@ -264,12 +270,13 @@ The task cards for this wave live in [`plans/wave-1-auth.md`](plans/wave-1-auth.
 - **Repo:** API · **Depends on:** T2.2 · **Parallel with:** T2.3, T2.5 · **PLAN:** §0 (Subtasks), §4 (add subtask, `POST /tasks/{id}/subtasks`)
 - **Owns:** `service/SubtaskService`, `controller/SubtaskController`, and `dto/CreateSubtaskRequest`.
 - **Scope:**
-  - Create 1–10 subtasks under a parent the caller owns, in one transaction.
-  - If the parent is itself a subtask → 400 `SUBTASK_DEPTH_EXCEEDED`.
+  - Create 1–10 subtasks under a parent the caller owns, at any depth, in one transaction. They get the parent's user.
+  - If the parent is at the maximum depth (T2.2's depth helper) → 400 `SUBTASK_DEPTH_EXCEEDED`.
   - Return `201` with the list of created tasks.
 - **Acceptance:** tests for:
   - success, with the new subtasks visible in `GET /tasks/{id}`
-  - depth exceeded
+  - building a chain down to depth 5 through the endpoint succeeds
+  - adding under a depth-5 task → 400 `SUBTASK_DEPTH_EXCEEDED`, and nothing is written
   - 0 items or 11 items → 400
   - a parent owned by another user → 404
 - **Verify:** `./mvnw test`
@@ -295,6 +302,7 @@ The task cards for this wave live in [`plans/wave-1-auth.md`](plans/wave-1-auth.
   - `src/api/queries/tasks.ts`: TanStack Query hooks with query-key conventions (`['tasks', filters]`, `['task', id]`, `['lookups']`). Mutations invalidate the affected keys.
   - Shared components: `PriorityBadge`, `StatusBadge`, `ComplexityBadge`, `ConfirmDialog`, `ErrorMessage` (maps an `ApiError.code` to text in `errors.json`).
   - i18n keys in `tasks.json`.
+  - Update the `SUBTASK_DEPTH_EXCEEDED` text in `errors.json` (both locales). It currently says a subtask can't have subtasks; it should say the task is at the maximum depth.
 - **Acceptance:** unit tests for query-string building (repeated `status`, dates, sort, page) and for the badges rendering localized labels.
 - **Verify:** `npm run lint && npm run build && npm test`
 - **Commit:** `feat(ui): add task api layer, query hooks and shared task components`
@@ -323,8 +331,9 @@ The task cards for this wave live in [`plans/wave-1-auth.md`](plans/wave-1-auth.
 - **Scope:**
   - A `TaskForm` used for both create and edit. Client-side validation mirrors PLAN §2. Server field errors are mapped onto the fields.
   - The detail page:
-    - shows every field and the subtask list (each subtask links to its own page)
-    - has an "add subtask" form, hidden when the task is itself a subtask
+    - shows an ancestor breadcrumb (each item links to that task) above the title
+    - shows every field and the direct subtask list (each subtask links to its own page and shows its `subtaskCount` when non-zero)
+    - has an "add subtask" form, hidden when `canAddSubtasks` is `false`
     - has edit, and delete with confirmation; after delete, navigate to `/`
   - A 404 page state.
   - Leave clearly marked slots for T3.4 (a "Suggest with AI" button next to the form) and T3.5 (a "Break down with AI" button in the subtask section), e.g. `<AiSuggestSlot />` placeholders rendering nothing.
@@ -332,7 +341,8 @@ The task cards for this wave live in [`plans/wave-1-auth.md`](plans/wave-1-auth.
   - create submits the right payload
   - server validation errors show on the matching fields
   - delete asks for confirmation and then navigates
-  - the add-subtask form is hidden on a subtask
+  - the breadcrumb renders the ancestors in order
+  - the add-subtask form shows on a subtask with `canAddSubtasks: true` and is hidden when it's `false`
 - **Verify:** `npm run lint && npm run build && npm test`
 - **Commit:** `feat(ui): add task create, detail, edit, delete and subtasks`
 
@@ -379,12 +389,14 @@ The task cards for this wave live in [`plans/wave-1-auth.md`](plans/wave-1-auth.
 - **Repo:** API · **Depends on:** T3.1, T2.4 · **Parallel with:** T3.2 · **PLAN:** §5 (Breakdown scenario, endpoint)
 - **Owns:** `service/ai/TaskBreakdownService`, `controller/TaskAiController` (`POST /api/v1/tasks/{id}/ai/breakdown`), and `prompts/breakdown.st`.
 - **Scope:**
-  - Load the caller's task: 404 if not found or not theirs; 400 `SUBTASK_DEPTH_EXCEEDED` if it is itself a subtask.
+  - Load the caller's task: 404 if not found or not theirs; 400 `SUBTASK_DEPTH_EXCEEDED` if it is at the maximum depth (T2.2's depth helper).
+  - Put the ancestors' titles, root first, in the prompt's data section as context.
   - Return 2–8 drafts, each with a valid priority and complexity.
   - The endpoint makes no database writes.
 - **Acceptance:**
   - Success.
-  - The 404, depth, 422 (1 draft or 9 drafts), and 503 cases.
+  - Breaking down a depth-3 task succeeds, and the captured prompt contains its ancestors' titles.
+  - The 404, depth (a depth-5 task), 422 (1 draft or 9 drafts), and 503 cases.
   - No rows are written.
 - **Verify:** `./mvnw test`
 - **Commit:** `feat(api): add ai subtask breakdown endpoint`
@@ -410,7 +422,7 @@ The task cards for this wave live in [`plans/wave-1-auth.md`](plans/wave-1-auth.
 - **Repo:** UI · **Depends on:** T2.8 · **Parallel with:** T3.4 · **PLAN:** §5 (Breakdown scenario), §6 (AI UX)
 - **Owns:** `src/api/aiBreakdown.ts`, `src/features/ai/breakdown/**`, and `src/i18n/locales/{en,pt-BR}/aiBreakdown.json`. It is kept separate from T3.4's `ai.ts` and `ai.json` so the two tasks don't edit the same files.
 - **Scope:**
-  - A "Break down with AI" button in the subtask section, hidden on subtasks.
+  - A "Break down with AI" button in the subtask section, hidden when `canAddSubtasks` is `false`.
   - The drafts appear as an editable list: edit the title, description, and priority; remove; reorder.
   - "Create N subtasks" calls `POST /tasks/{id}/subtasks`, invalidates the task query, and closes the panel.
   - The button is disabled while the request is in flight, to prevent duplicate accepts.

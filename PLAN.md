@@ -13,7 +13,7 @@ These decisions resolve ambiguities in earlier drafts. Change them here first if
 | Password reset | **Specified here but delivered in a later phase** (Phase 5). It needs SMTP. Mailpit is used locally. |
 | Overdue | `OVERDUE` stays a **stored status**. A scheduled job sets it (see §2 "Status rules"). |
 | "Today" | Comes from the configurable app time zone `app.timezone` (default `America/Sao_Paulo`). `dueDate` is a `DATE`, with no time component. |
-| Subtasks | **One level only.** A subtask has exactly one parent and can't have its own subtasks. Deleting a parent deletes its subtasks. Subtasks are hidden from the main list by default. They can be created manually or from AI drafts. |
+| Subtasks | **A tree, at most 5 levels deep.** Every task has at most one parent and any number of subtasks, which can have subtasks of their own. "Parent" and "subtask" are roles, not types: there is one `Task` entity. A top-level task is depth 1, and a task at the maximum depth (`app.tasks.max-depth`, default `5`) can't get subtasks. Deleting a task deletes its whole subtree. The parent is set only when a subtask is created and never changes, so the tree can't have cycles. Subtasks are hidden from the main list by default. They can be created manually or from AI drafts. |
 | AI suggestions | "Enhance" and "Estimate" are **merged** into one `POST /api/v1/ai/suggest` endpoint. It takes a draft `{title, description}`, so it works on unsaved tasks too. Breakdown stays task-based. |
 | Chat | **Query-only and stateless** in v1. The client may send the last few messages as context, and nothing is persisted. Creating and editing tasks through chat (tool calling) comes in a later phase. |
 | Roles | `USER` and `ADMIN` are seeded. Every new account gets `USER`. There are no admin endpoints in v1. Every user sees only their own tasks. |
@@ -25,10 +25,11 @@ These decisions resolve ambiguities in earlier drafts. Change them here first if
 - A not-blank check on title: `CHECK (TITLE ~ '\S')`.
 - `TASK.USER_ID` becomes `NOT NULL`, because every task belongs to a user.
 - `TASK.STATUS_ID` and `TASK.PRIORITY_ID` become `NOT NULL`. The service applies defaults (see §2).
-- `TASK_SUBTASK`: add `UNIQUE (SUBTASK_ID)` so each subtask has one parent, and `CHECK (PARENT_TASK_ID <> SUBTASK_ID)`.
+- `TASK.PARENT_TASK_ID UUID NULL REFERENCES TASK(ID) ON DELETE CASCADE`, with `CHECK (PARENT_TASK_ID <> ID)` and an index on `PARENT_TASK_ID`. A column holds exactly one parent per task, and the cascade deletes a whole subtree at any depth.
+- Drop `TASK_SUBTASK`. It's empty, because no endpoint wrote tasks before this migration. V1 itself isn't edited.
 - An index on `TASK (USER_ID, STATUS_ID, DUE_DATE)` for listing and filtering.
 
-The service layer enforces the one-level rule: a task that is already a subtask can't become a parent.
+The service layer enforces the depth limit (§0) and creates every subtask with its parent's `USER_ID`. The database doesn't check depth.
 
 ## 2. Shared API contract
 
@@ -44,13 +45,19 @@ The service layer enforces the one-level rule: a task that is already a subtask 
   "status": "TODO | IN_PROGRESS | OVERDUE | DONE",
   "complexity": "EASY | MEDIUM | HARD | null",
   "parentTaskId": "uuid | null",
+  "ancestors": [ { "id": "uuid", "title": "string" } ],
+  "canAddSubtasks": true,
   "subtasks": [ "SubtaskSummary" ],
   "createdAt": "ISO-8601",
   "updatedAt": "ISO-8601"
 }
 ```
 
-`subtasks` appears only in the single-task response (`GET /tasks/{id}`). List responses leave it out.
+`ancestors`, `canAddSubtasks`, and `subtasks` appear only in the single-task response (`GET /tasks/{id}`). List responses leave them out.
+
+- `ancestors`: the path from the top-level task down to the direct parent, root first, for a breadcrumb. Empty for a top-level task. The task's depth is `ancestors.length + 1`.
+- `canAddSubtasks`: `false` when the task is at the maximum depth. The UI uses it to hide "add subtask" and "Break down with AI", so it never needs to know the limit.
+- `subtasks`: **direct** children only, never the whole subtree. To go deeper, open a subtask.
 
 ### SubtaskSummary object
 
@@ -60,11 +67,12 @@ The service layer enforces the one-level rule: a task that is already a subtask 
   "title": "string (1-100)",
   "status": "TODO | IN_PROGRESS | OVERDUE | DONE",
   "priority": "LOW | MEDIUM | HIGH",
-  "dueDate": "2026-10-31 | null"
+  "dueDate": "2026-10-31 | null",
+  "subtaskCount": 0
 }
 ```
 
-`SubtaskSummary` is a deliberately trimmed view, holding only what the subtask list on the parent's detail page displays. `description`, `complexity`, `parentTaskId`, and the timestamps are left out to keep `GET /tasks/{id}` small. To get a subtask's full details, call `GET /tasks/{subtaskId}`.
+`SubtaskSummary` is a deliberately trimmed view, holding only what the subtask list on the parent's detail page displays. `subtaskCount` is the number of its direct children, so the list can show that a subtask has subtasks of its own. `description`, `complexity`, `parentTaskId`, and the timestamps are left out to keep `GET /tasks/{id}` small. To get a subtask's full details, call `GET /tasks/{subtaskId}`.
 
 ### Validation and defaults
 
@@ -88,7 +96,7 @@ Every error uses RFC 9457 `ProblemDetail`, plus a `code` property in English and
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | Bean Validation failed or a filter value is malformed |
 | 400 | `INVALID_STATUS` / `INVALID_PRIORITY` / `INVALID_COMPLEXITY` | Unknown enum name, or `OVERDUE` set by a user |
-| 400 | `SUBTASK_DEPTH_EXCEEDED` | Adding subtasks to a task that is itself a subtask |
+| 400 | `SUBTASK_DEPTH_EXCEEDED` | Adding subtasks to (or breaking down) a task at the maximum depth (§0) |
 | 401 | `UNAUTHORIZED` | Missing, invalid, or expired token |
 | 401 | `BAD_CREDENTIALS` | Wrong email or password at sign-in |
 | 404 | `TASK_NOT_FOUND` | The task doesn't exist **or belongs to another user**. The API never reveals that it exists. |
@@ -174,7 +182,7 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
 * **View a task**
   * **Given** an authenticated user has tasks,
   * **When** they open one of them,
-  * **Then** they see its full details, including its subtasks.
+  * **Then** they see its full details, its direct subtasks, and the path of its ancestors.
   * *Negative:* opening another user's task returns `404 TASK_NOT_FOUND`.
 
 * **Edit a task**
@@ -196,22 +204,23 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
 * **Delete a task**
   * **Given** an authenticated user no longer needs a task,
   * **When** they confirm the deletion,
-  * **Then** the task **and all of its subtasks** are deleted in one transaction.
+  * **Then** the task **and its whole subtree, at every depth,** are deleted in one transaction.
 
 * **Add a subtask manually**
-  * **Given** a top-level task,
+  * **Given** a task below the maximum depth (top-level or itself a subtask),
   * **When** the user adds a subtask,
-  * **Then** the subtask is created and linked to the parent.
+  * **Then** the subtask is created one level below it and linked to it.
+  * *Negative:* if the task is at the maximum depth, the API returns `400 SUBTASK_DEPTH_EXCEEDED`.
 
 ### Endpoints
 
 | Method | Endpoint | Description | Request | Response |
 |---|---|---|---|---|
 | `POST` | `/api/v1/tasks` | Create a task | `{ title, description, dueDate?, priority?, complexity? }` | `201` Task, with a `Location` header |
-| `GET` | `/api/v1/tasks/{id}` | Get one task | – | `200` Task (with `subtasks`) |
+| `GET` | `/api/v1/tasks/{id}` | Get one task | – | `200` Task (with `ancestors`, `canAddSubtasks`, and `subtasks`) |
 | `PUT` | `/api/v1/tasks/{id}` | Replace editable fields | `{ title, description, dueDate, priority, status, complexity }` | `200` Task |
 | `PATCH` | `/api/v1/tasks/{id}` | Partial update | Any subset of the `PUT` fields | `200` Task |
-| `DELETE` | `/api/v1/tasks/{id}` | Delete the task and its subtasks | – | `204` |
+| `DELETE` | `/api/v1/tasks/{id}` | Delete the task and its whole subtree | – | `204` |
 | `GET` | `/api/v1/tasks` | List and filter | See the query parameters below | `200` Page of Task |
 | `POST` | `/api/v1/tasks/{id}/subtasks` | Create subtasks (manual or accepted AI drafts) | `[{ title, description, priority?, complexity?, dueDate? }]` (1–10 items) | `201` `[Task]` |
 | `GET` | `/api/v1/lookups` | Enum values for the UI | – | `200` `{ priorities, statuses, complexities }` |
@@ -222,7 +231,7 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
 - `priority`, `complexity`: repeatable
 - `dueFrom`, `dueTo`: ISO dates, inclusive
 - `q`: case-insensitive match on title and description
-- `includeSubtasks`: default `false`
+- `includeSubtasks`: default `false`, which lists only top-level tasks (no parent). `true` lists tasks at every depth.
 - `page`: default `0`
 - `size`: default `20`, max `100`
 - `sort`: default `dueDate,asc`. Allowed fields: `dueDate`, `priority`, `createdAt`, `title`.
@@ -258,11 +267,12 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
   * **And** for a saved task, accepting calls `PATCH /tasks/{id}`. For a draft, accepting fills the create form.
 
 * **Break down into subtasks**
-  * **Given** a saved top-level task,
+  * **Given** a saved task below the maximum depth,
   * **When** the user asks the AI to break it down,
   * **Then** the AI returns 2–8 draft subtasks, each with a title, description, priority, and complexity.
+  * **And** the prompt includes the titles of the task's ancestors, root first, so drafts for a deep subtask fit its context.
   * **And** the user can edit, remove, or reorder the drafts, then accept. Accepting calls `POST /tasks/{id}/subtasks` with the remaining drafts.
-  * *Negative:* if the task is itself a subtask, the API returns `400 SUBTASK_DEPTH_EXCEEDED`.
+  * *Negative:* if the task is at the maximum depth, the API returns `400 SUBTASK_DEPTH_EXCEEDED`.
 
 * **Chat assistant (query-only)**
   * **Given** an authenticated user opens the chat panel,
@@ -287,7 +297,7 @@ All of this follows the conventions in `AGENTS.md`: React Router, TanStack Query
 - `/login`, `/signup`
 - `/forgot-password` and `/reset-password?token=` *(Phase 5)*
 - `/` (dashboard: task list with filters, sorting, and pagination)
-- `/tasks/new`, `/tasks/:id` (detail and edit, with a subtask section)
+- `/tasks/new`, `/tasks/:id` (detail and edit, with an ancestor breadcrumb and a subtask section)
 - the chat side panel, available on every authenticated page
 
 **Auth:**
@@ -305,7 +315,7 @@ All of this follows the conventions in `AGENTS.md`: React Router, TanStack Query
 
 - New env vars, added to `.env.example`: `JWT_SECRET`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `APP_TIMEZONE`.
 - Phase 5 adds `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM`, and `APP_BASE_URL`.
-- `application.properties` gets the datasource, Flyway location (`classpath:db/migration/postgres`), Spring AI Google GenAI settings, and CORS for `http://localhost:5173`.
+- `application.properties` gets the datasource, Flyway location (`classpath:db/migration/postgres`), Spring AI Google GenAI settings, CORS for `http://localhost:5173`, and `app.tasks.max-depth=5` (not an env var).
 
 ## 8. Testing strategy
 
@@ -326,4 +336,4 @@ All of this follows the conventions in `AGENTS.md`: React Router, TanStack Query
 | 3 | AI suggest and breakdown | All §5 scenarios except chat are covered, with the AI mocked |
 | 4 | Chat assistant (query-only) | The chat scenarios are covered |
 | 5 | Password reset (SMTP, Mailpit in compose) | The reset scenarios are covered |
-| Later | Chat tool calling (create and update tasks), refresh tokens, admin features, parent auto-completion | – |
+| Later | Chat tool calling (create and update tasks), refresh tokens, admin features, parent auto-completion, moving a task to another parent (needs a cycle check) | – |

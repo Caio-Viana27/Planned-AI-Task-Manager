@@ -8,7 +8,7 @@ Guidance for AI coding agents working in this repository.
 
 Planned AI Task Manager is a task manager that uses AI (Google Gemini via Spring AI) to:
 
-1. **Break tasks into subtasks.** Results are stored as tasks linked through `TASK_SUBTASK`.
+1. **Break tasks into subtasks.** Results are stored as tasks in a tree through `TASK.PARENT_TASK_ID`, at most 5 levels deep (PLAN §0).
 2. **Estimate priority and complexity.** The AI suggests `PRIORITIES` (LOW/MEDIUM/HIGH) and `COMPLEXITIES` (EASY/MEDIUM/HARD).
 3. **Chat assistant.** Users create and query tasks in natural language.
 
