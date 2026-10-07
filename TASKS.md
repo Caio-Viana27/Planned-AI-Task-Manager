@@ -43,7 +43,7 @@ Several parallel tasks have to touch the same files. The rules for each:
 |---|---|
 | `pom.xml`, `package.json` | Only Wave 0 tasks, T1.2 (the OAuth2 resource server starter), and T5.2 add dependencies. Any other task that needs one stops and asks the orchestrator. |
 | `exception/ErrorCode.java` | Every code in PLAN §2 is created up front in T0.4. Later tasks only *use* the codes. |
-| `application.properties` | T0.2 adds every property the plan needs, including AI, JWT, and timezone. T1.1 adds the two Hibernate timestamp properties (wave 1 plan, D3). T2.1 adds `app.tasks.max-depth=5` and its `AppProperties` binding. Later tasks only read them. |
+| `application.properties` | T0.2 adds every property the plan needs, including AI, JWT, and timezone. T1.1 adds the two Hibernate timestamp properties (wave 1 plan, D3). T2.1 adds `app.tasks.max-depth=5` and its `AppProperties` binding. T3.1 adds `spring.ai.retry.max-attempts=1` (wave 3 plan, D2). Later tasks only read them. |
 | UI locale files `src/i18n/locales/{en,pt-BR}/*.json` | One **namespace file per feature** (`auth.json`, `tasks.json`, `ai.json`, `aiBreakdown.json`, `chat.json`, `passwordReset.json`, `errors.json`), so parallel tasks don't touch the same file. `errors.json` (all error codes) is created up front in T0.3. T1.7 adds `auth.json` and registers it in `src/i18n/index.ts`, `i18next.d.ts`, and `locales.test.ts`; later namespaces are registered the same way. |
 | UI router `src/routes/router.tsx` | T0.3 creates every route as a placeholder page. T1.5 wraps the routes in a root auth route. Other feature tasks replace their own page files and never edit the router. |
 | `config/SecurityConfig.java` | T1.3 owns this file. T5.2 is the only later task that may touch it, to make the reset endpoints public. |
@@ -74,7 +74,7 @@ Wave 2  T2.1 (API) → T2.2 (API) → { T2.3, T2.4, T2.5 } (API)
         T2.6 (UI) → { T2.7, T2.8 } (UI)   (see plans/wave-2-tasks.md)
         Addendum D9: T2.9 (API, after T2.2) → T2.10 (UI, after T2.7, T2.8)
 Wave 3  T3.1 (API) → { T3.2, T3.3 } (API)
-        { T3.4, T3.5 } (UI, after T2.8)
+        T3.4 (UI) → T3.5 (UI)   (see plans/wave-3-ai.md)
 Wave 4  T4.1 (API) ‖ T4.2 (UI)
 Wave 5  T5.1 (root) → T5.2 (API) ‖ T5.3 (UI)
 Final   T9.1 (root, orchestrator)
@@ -218,90 +218,15 @@ The task cards for this wave live in [`plans/wave-2-tasks.md`](plans/wave-2-task
 
 ## Wave 3: AI suggest and breakdown (PLAN §5)
 
-### T3.1 API: AI foundation
-- **Repo:** API · **Depends on:** T0.4, T1.3 · **PLAN:** §5 (Shared rules)
-- **Owns:** `service/ai/AiClient`, `service/ai/AiQuotaService`, `config/AiConfig`, and `src/main/resources/prompts/`.
-- **Scope:**
-  - `AiClient`: the **only** class that uses `ChatClient`. It exposes a generic `<T> T call(String systemPrompt, Map<String,Object> userData, Class<T> type, Locale locale)`, which:
-    - adds today's date, the timezone, and the locale to every prompt
-    - puts user and task text inside delimited data sections
-    - converts the response into structured output, then runs Bean Validation on it; on failure → `AI_INVALID_RESPONSE`
-    - applies the timeout (`app.ai.timeout`) and one retry, only on transient errors
-    - maps timeouts, 429, and 5xx from the provider to `AI_UNAVAILABLE`
-  - `AiQuotaService`: an in-memory sliding window per user (`app.ai.quota-per-hour`). Exceeding it → `AI_RATE_LIMITED`. A single in-memory instance is fine, because the app is a monolith.
-- **Acceptance:** tests with the mocked `ChatModel`:
-  - valid JSON → a parsed record
-  - malformed JSON or an invalid enum → 422
-  - an exception or timeout → 503, with one retry
-  - the 31st call within an hour → 429 (fixed `Clock`)
-  - the prompt contains the date and the locale (capture the `Prompt` argument)
-- **Verify:** `./mvnw test`
-- **Commit:** `feat(api): add ai client with structured output, resilience and quota`
+The task cards for this wave live in [`plans/wave-3-ai.md`](plans/wave-3-ai.md), together with its decisions (D1–D9). That plan replaces the cards that used to be here. `T3.n` anywhere in this file means task 3.n of that plan:
 
-### T3.2 API: `/ai/suggest`
-- **Repo:** API · **Depends on:** T3.1 · **Parallel with:** T3.3 · **PLAN:** §5 (Suggest scenario, endpoint)
-- **Owns:** `service/ai/TaskSuggestionService`, `controller/AiController` (only the suggest method for now), `dto/SuggestRequest`, `dto/SuggestResponse`, and `prompts/suggest.st`.
-- **Scope:**
-  - Validated input: title of at most 100 characters and description of at most 500, both not blank.
-  - The response's enums must be valid lookup names, and the suggested title and description must respect the same length limits.
-  - Locale comes from the `Accept-Language` header (`en` or `pt-BR`, defaulting to `en`).
-  - The endpoint makes no database writes.
-- **Acceptance:**
-  - Success with a mocked model.
-  - Invalid input → 400.
-  - A model response with a 300-character title → 422.
-  - No `TASK` rows change.
-  - Unauthenticated → 401.
-- **Verify:** `./mvnw test`
-- **Commit:** `feat(api): add ai task suggestion endpoint`
-
-### T3.3 API: breakdown
-- **Repo:** API · **Depends on:** T3.1, T2.4 · **Parallel with:** T3.2 · **PLAN:** §5 (Breakdown scenario, endpoint)
-- **Owns:** `service/ai/TaskBreakdownService`, `controller/TaskAiController` (`POST /api/v1/tasks/{id}/ai/breakdown`), and `prompts/breakdown.st`.
-- **Scope:**
-  - Load the caller's task: 404 if not found or not theirs; 400 `SUBTASK_DEPTH_EXCEEDED` if it is at the maximum depth (T2.2's depth helper).
-  - Put the ancestors' titles, root first, in the prompt's data section as context.
-  - Return 2–8 drafts, each with a valid priority and complexity.
-  - The endpoint makes no database writes.
-- **Acceptance:**
-  - Success.
-  - Breaking down a depth-3 task succeeds, and the captured prompt contains its ancestors' titles.
-  - The 404, depth (a depth-5 task), 422 (1 draft or 9 drafts), and 503 cases.
-  - No rows are written.
-- **Verify:** `./mvnw test`
-- **Commit:** `feat(api): add ai subtask breakdown endpoint`
-
-### T3.4 UI: AI suggest UX
-- **Repo:** UI · **Depends on:** T2.8 · **Parallel with:** T3.5 · **PLAN:** §5 (Suggest scenario), §6 (AI UX)
-- **Owns:** `src/api/ai.ts`, `src/features/ai/suggest/**`, `src/i18n/locales/{en,pt-BR}/ai.json`, and the `AiSuggestSlot` implementation.
-- **Scope:**
-  - A "Suggest with AI" button inside `TaskForm`, for both create and edit, enabled once the title and description are filled in.
-  - A side-by-side current-vs-suggested view, showing the reasoning, with per-field checkboxes and the actions "Accept all", "Accept selected", and "Dismiss".
-  - Accepting:
-    - in create mode, fills the form
-    - in edit mode, calls `PATCH` with only the selected fields
-  - Loading state, and localized messages for 422, 429, and 503.
-  - The form keeps its values when the AI fails.
-- **Acceptance:** component tests:
-  - selecting fields and then accepting patches only those fields
-  - a 503 shows the unavailable message and leaves the form intact
-- **Verify:** `npm run lint && npm run build && npm test`
-- **Commit:** `feat(ui): add ai suggestion review and accept flow`
-
-### T3.5 UI: AI breakdown UX
-- **Repo:** UI · **Depends on:** T2.8 · **Parallel with:** T3.4 · **PLAN:** §5 (Breakdown scenario), §6 (AI UX)
-- **Owns:** `src/api/aiBreakdown.ts`, `src/features/ai/breakdown/**`, and `src/i18n/locales/{en,pt-BR}/aiBreakdown.json`. It is kept separate from T3.4's `ai.ts` and `ai.json` so the two tasks don't edit the same files.
-- **Scope:**
-  - A "Break down with AI" button in the subtask section, hidden when `canAddSubtasks` is `false`.
-  - The drafts appear as an editable list: edit the title, description, and priority; remove; reorder.
-  - "Create N subtasks" calls `POST /tasks/{id}/subtasks`, invalidates the task query, and closes the panel.
-  - The button is disabled while the request is in flight, to prevent duplicate accepts.
-  - AI error states, as in T3.4.
-- **Acceptance:** component tests:
-  - editing and removing a draft sends the edited list
-  - a 503 shows the localized message
-- **Verify:** `npm run lint && npm run build && npm test`
-- **Commit:** `feat(ui): add ai subtask breakdown review and accept flow`
+| ID | Task | Repo |
+|---|---|---|
+| T3.1 | AI foundation (`AiClient`, quota, retry and timeout) | API |
+| T3.2 | `/ai/suggest` | API |
+| T3.3 | Breakdown | API |
+| T3.4 | AI suggest UX (and `Accept-Language`) | UI |
+| T3.5 | AI breakdown UX | UI |
 
 ## Wave 4: Chat (PLAN §5, chat)
 
