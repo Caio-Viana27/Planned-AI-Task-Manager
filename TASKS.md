@@ -71,7 +71,7 @@ Wave 0  T0.1 (root) · T0.2 (API) · T0.3 (UI)
         T0.4 (API, after T0.2)
 Wave 1  T1.1 → T1.2 → T1.3 → T1.4 (API)  ‖  T1.5 → T1.6 → T1.7 (UI)   (see plans/wave-1-auth.md)
 Wave 2  T2.1 (API) → T2.2 (API) → { T2.3, T2.4, T2.5 } (API)
-        T2.6 (UI) → { T2.7, T2.8 } (UI)
+        T2.6 (UI) → { T2.7, T2.8 } (UI)   (see plans/wave-2-tasks.md)
 Wave 3  T3.1 (API) → { T3.2, T3.3 } (API)
         { T3.4, T3.5 } (UI, after T2.8)
 Wave 4  T4.1 (API) ‖ T4.2 (UI)
@@ -200,151 +200,18 @@ The task cards for this wave live in [`plans/wave-1-auth.md`](plans/wave-1-auth.
 
 ## Wave 2: Tasks (PLAN §1, §2, §4)
 
-### T2.1 API: task schema, entities, and lookups
-- **Repo:** API · **Depends on:** T1.1 · **PLAN:** §1, §2 (Task object, Validation), §4 (`GET /lookups`)
-- **Scope:**
-  - A new migration for the task schema, exactly as described in PLAN §1.
-  - Entities: `Priority`, `TaskStatus`, `Complexity`, and `Task`. `Task` has a `ManyToOne` to user and the lookups, and a lazy `@ManyToOne parent` mapped to the `PARENT_TASK_ID` column. There are no separate parent or subtask classes.
-  - `app.tasks.max-depth=5` in `application.properties`, bound as `AppProperties.Tasks.maxDepth`.
-  - Repositories for each. `TaskRepository` gets a recursive-CTE query returning a task's ancestors (`id`, `title`), root first.
-  - `service/LookupService`:
-    - resolves a name to an entity, throwing `INVALID_PRIORITY`, `INVALID_STATUS`, or `INVALID_COMPLEXITY`
-    - caches the lookups
-  - `controller/LookupController` for `GET /api/v1/lookups`.
-- **Acceptance:**
-  - Migration test: every migration applies.
-  - These fail at the DB level: a blank title, and a task that is its own parent.
-  - `TASK_SUBTASK` no longer exists.
-  - Deleting a top-level task with `JdbcTemplate` removes a 3-level subtree below it (the FK cascade).
-  - The ancestors query returns the path root first, and nothing for a top-level task.
-  - The lookups endpoint returns the seeded names in seed order.
-  - An unknown name produces the right error code.
-- **Verify:** `./mvnw test`
-- **Commit:** `feat(api): add task schema migration, task and lookup entities, lookups endpoint`
+The task cards for this wave live in [`plans/wave-2-tasks.md`](plans/wave-2-tasks.md), together with its decisions (D1–D8). That plan replaces the cards that used to be here. `T2.n` anywhere in this file means task 2.n of that plan:
 
-### T2.2 API: task CRUD
-- **Repo:** API · **Depends on:** T1.3, T2.1 · **PLAN:** §2 (all), §4 (create, view, edit, status change, delete)
-- **Scope:**
-  - DTOs: `CreateTaskRequest`, `UpdateTaskRequest` (PUT, all fields), `PatchTaskRequest` (all fields optional; use a `JsonNullable` or a presence-tracking approach so that `dueDate: null` clears the date), `TaskResponse` (with `ancestors` and `canAddSubtasks`), `AncestorSummary`, and `SubtaskSummary` (with `subtaskCount`). See PLAN §2.
-  - `service/TaskService`:
-    - Ownership checks: another user's task → 404 `TASK_NOT_FOUND`.
-    - Defaults from PLAN §2.
-    - Status rules from §2:
-      - a user may not set `OVERDUE`
-      - on an `OVERDUE` task, a `dueDate` change to today or later, or clearing it, resets the status to `TODO`
-    - Delete removes the task and its whole subtree in one transaction, relying on the FK cascade (no tree walk in Java).
-    - A shared depth helper (`depth = ancestors + 1`, `canAddSubtasks = depth < maxDepth`), which T2.4 and T3.3 reuse.
-  - `controller/TaskController`: `POST`, `GET /{id}` (with ancestors and direct subtasks), `PUT`, `PATCH`, and `DELETE`. Add a `Location` header on create.
-- **Acceptance:** integration tests for every §4 scenario except filter and subtask creation, plus:
-  - user B gets 404 on user A's task for GET, PUT, PATCH, and DELETE
-  - `OVERDUE` → 400 `INVALID_STATUS`
-  - the OVERDUE reset rule
-  - DONE → TODO is allowed
-  - deleting a task also deletes its children and grandchildren (insert rows directly in the test setup)
-  - `GET /tasks/{id}` on a depth-3 task returns 2 ancestors root first, only its direct subtasks with correct `subtaskCount`s, and `canAddSubtasks: true`; on a depth-5 task, `canAddSubtasks: false`
-- **Verify:** `./mvnw test`
-- **Commit:** `feat(api): add task crud with ownership and status rules`
-
-### T2.3 API: list, filter, sort, and paginate
-- **Repo:** API · **Depends on:** T2.2 · **Parallel with:** T2.4, T2.5
-- **PLAN:** §4 (filter scenario, `GET /tasks` query parameters)
-- **Owns:** `service/TaskQueryService`, `repository/TaskSpecifications`, and a new `controller/TaskQueryController` that maps `GET /api/v1/tasks`. Don't edit `TaskController`, to avoid conflicts.
-- **Scope:**
-  - JPA Specifications for every filter in PLAN §4.
-  - Sorting only on the allowed fields, otherwise 400.
-  - `size` capped at 100.
-  - A `PageResponse<T>` record with the shape from PLAN §4.
-  - `includeSubtasks=false` leaves out tasks that have a parent; `true` includes tasks at every depth.
-- **Acceptance:** tests for:
-  - each filter alone and combined
-  - repeated `status` values
-  - date-range bounds being inclusive
-  - `q` matching title and description in any letter case
-  - default sort, and nulls last on `dueDate`
-  - an invalid status or sort field → 400
-  - results limited to the caller's own tasks
-- **Verify:** `./mvnw test`
-- **Commit:** `feat(api): add task filtering, sorting and pagination`
-
-### T2.4 API: create subtasks
-- **Repo:** API · **Depends on:** T2.2 · **Parallel with:** T2.3, T2.5 · **PLAN:** §0 (Subtasks), §4 (add subtask, `POST /tasks/{id}/subtasks`)
-- **Owns:** `service/SubtaskService`, `controller/SubtaskController`, and `dto/CreateSubtaskRequest`.
-- **Scope:**
-  - Create 1–10 subtasks under a parent the caller owns, at any depth, in one transaction. They get the parent's user.
-  - If the parent is at the maximum depth (T2.2's depth helper) → 400 `SUBTASK_DEPTH_EXCEEDED`.
-  - Return `201` with the list of created tasks.
-- **Acceptance:** tests for:
-  - success, with the new subtasks visible in `GET /tasks/{id}`
-  - building a chain down to depth 5 through the endpoint succeeds
-  - adding under a depth-5 task → 400 `SUBTASK_DEPTH_EXCEEDED`, and nothing is written
-  - 0 items or 11 items → 400
-  - a parent owned by another user → 404
-- **Verify:** `./mvnw test`
-- **Commit:** `feat(api): add subtask creation endpoint`
-
-### T2.5 API: overdue job
-- **Repo:** API · **Depends on:** T2.1 (and T2.2 merged, to avoid entity conflicts) · **Parallel with:** T2.3, T2.4 · **PLAN:** §2 (Status rules)
-- **Owns:** `service/OverdueTaskScheduler` and `config/SchedulingConfig`.
-- **Scope:**
-  - Enable scheduling.
-  - Run a cron `0 5 0 * * *` job in the `app.timezone` zone.
-  - Bulk-update tasks whose status is `TODO` or `IN_PROGRESS` and whose `dueDate` is before today (from the `Clock`) to `OVERDUE`, and refresh `updatedAt`.
-  - Log how many tasks changed.
-  - Expose the job as a method the tests can call directly.
-- **Acceptance:** with a fixed `Clock`, these become OVERDUE: TODO and IN_PROGRESS tasks with a past due date. These stay unchanged: tasks due today, future tasks, DONE tasks, tasks with no due date, and tasks already OVERDUE.
-- **Verify:** `./mvnw test`
-- **Commit:** `feat(api): add scheduled overdue task job`
-
-### T2.6 UI: task API layer and shared components
-- **Repo:** UI · **Depends on:** T1.7 · **PLAN:** §2 (Task object), §4 (endpoints)
-- **Scope:**
-  - `src/api/tasks.ts`: types for `Task`, `PageResponse`, and `TaskFilters`, plus functions for every task, subtask, and lookup endpoint.
-  - `src/api/queries/tasks.ts`: TanStack Query hooks with query-key conventions (`['tasks', filters]`, `['task', id]`, `['lookups']`). Mutations invalidate the affected keys.
-  - Shared components: `PriorityBadge`, `StatusBadge`, `ComplexityBadge`, `ConfirmDialog`, `ErrorMessage` (maps an `ApiError.code` to text in `errors.json`).
-  - i18n keys in `tasks.json`.
-  - Update the `SUBTASK_DEPTH_EXCEEDED` text in `errors.json` (both locales). It currently says a subtask can't have subtasks; it should say the task is at the maximum depth.
-- **Acceptance:** unit tests for query-string building (repeated `status`, dates, sort, page) and for the badges rendering localized labels.
-- **Verify:** `npm run lint && npm run build && npm test`
-- **Commit:** `feat(ui): add task api layer, query hooks and shared task components`
-
-### T2.7 UI: dashboard
-- **Repo:** UI · **Depends on:** T2.6 · **Parallel with:** T2.8 · **PLAN:** §4 (filter scenario, quick status change), §6
-- **Owns:** `src/pages/DashboardPage.tsx` and `src/features/tasks/list/**`.
-- **Scope:**
-  - A task list showing: status, priority, complexity, due date, and an overdue marker.
-  - Filters: multi-select status, priority, and complexity; due-from and due-to dates; text search (debounced).
-  - Sort control and pagination.
-  - Filters stored in URL search params.
-  - A quick status toggle (PATCH) with an optimistic update.
-  - A "new task" button.
-  - Empty, loading, and error states.
-- **Acceptance:** component tests:
-  - changing a filter updates the URL and the query
-  - the status toggle calls PATCH and rolls back on error
-  - the empty state renders
-- **Verify:** `npm run lint && npm run build && npm test`
-- **Commit:** `feat(ui): add task dashboard with filters, sorting and pagination`
-
-### T2.8 UI: task form, detail, and subtasks
-- **Repo:** UI · **Depends on:** T2.6 · **Parallel with:** T2.7 · **PLAN:** §4 (create, view, edit, delete, add subtask), §6
-- **Owns:** `src/pages/TaskNewPage.tsx`, `src/pages/TaskDetailPage.tsx`, and `src/features/tasks/{form,detail,subtasks}/**`.
-- **Scope:**
-  - A `TaskForm` used for both create and edit. Client-side validation mirrors PLAN §2. Server field errors are mapped onto the fields.
-  - The detail page:
-    - shows an ancestor breadcrumb (each item links to that task) above the title
-    - shows every field and the direct subtask list (each subtask links to its own page and shows its `subtaskCount` when non-zero)
-    - has an "add subtask" form, hidden when `canAddSubtasks` is `false`
-    - has edit, and delete with confirmation; after delete, navigate to `/`
-  - A 404 page state.
-  - Leave clearly marked slots for T3.4 (a "Suggest with AI" button next to the form) and T3.5 (a "Break down with AI" button in the subtask section), e.g. `<AiSuggestSlot />` placeholders rendering nothing.
-- **Acceptance:** component tests:
-  - create submits the right payload
-  - server validation errors show on the matching fields
-  - delete asks for confirmation and then navigates
-  - the breadcrumb renders the ancestors in order
-  - the add-subtask form shows on a subtask with `canAddSubtasks: true` and is hidden when it's `false`
-- **Verify:** `npm run lint && npm run build && npm test`
-- **Commit:** `feat(ui): add task create, detail, edit, delete and subtasks`
+| ID | Task | Repo |
+|---|---|---|
+| T2.1 | Task schema, entities, and lookups | API |
+| T2.2 | Task CRUD | API |
+| T2.3 | List, filter, sort, and paginate | API |
+| T2.4 | Create subtasks | API |
+| T2.5 | Overdue job | API |
+| T2.6 | Task API layer and shared components | UI |
+| T2.7 | Dashboard | UI |
+| T2.8 | Task form, detail, and subtasks | UI |
 
 ## Wave 3: AI suggest and breakdown (PLAN §5)
 
