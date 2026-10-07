@@ -1,6 +1,6 @@
 # Wave 3: AI suggest and breakdown
 
-**Status:** planned, all decisions confirmed (2026-10-07) · **PLAN:** §0 (Subtasks), §2 (Errors: 422, 429, 503), §5 (shared rules, Suggest and Breakdown scenarios and endpoints), §6 (AI UX), §8, §9 phase 3
+**Status:** implemented (2026-10-07): T3.1–T3.5 committed, `./mvnw test` and the UI checks pass. Checkpoints A and B are pending: they need a real `AI_API_KEY` · **PLAN:** §0 (Subtasks), §2 (Errors: 422, 429, 503), §5 (shared rules, Suggest and Breakdown scenarios and endpoints), §6 (AI UX), §8, §9 phase 3
 
 ## Goal
 
@@ -43,7 +43,7 @@ Confirmed by the maintainer on 2026-10-07. D10 was added and confirmed the same 
 
 `GoogleGenAiChatModel` has its own `RetryTemplate`, and Spring AI's default retries many times with backoff. Combined with our own retry, that would break both "one retry" and the 20 s limit.
 
-- **T3.1 adds `spring.ai.retry.max-attempts=1`** to `application.properties` (check the exact property name in Spring AI 2.0.1's `SpringAiRetryProperties`). This is an approved exception to the `application.properties` hotspot rule. A test asserts the model's retry is off, e.g. by checking the bound property.
+- **T3.1 adds `spring.ai.retry.max-attempts=0`** to `application.properties`. Checked in Spring AI 2.0.1: `SpringAiRetryAutoConfiguration` passes the value to `RetryPolicy.maxRetries`, so it counts retries, not attempts, and `0` means a single attempt (`1` would allow one hidden retry). This is an approved exception to the `application.properties` hotspot rule. A test asserts the model's retry is off, e.g. by checking the bound property.
 - **Deadline:** `AiClient` runs each attempt on a virtual thread and waits with `Future.get(remaining)`, where `remaining` is what's left of one `app.ai.timeout` budget started at the first attempt. On timeout it cancels the future → `503 AI_UNAVAILABLE`. Worst-case latency is therefore about 20 s, not 40 s.
 - **Retry:** exactly one, only when `isTransient` is true and the deadline hasn't passed. A timeout uses up the budget, so it isn't retried.
 - **Other errors** (400, 401/403 from a bad key, unexpected exceptions) → `503 AI_UNAVAILABLE` with no retry, logged at `ERROR` with the exception class and status only. A parse or validation failure isn't a model error: it's `422` with no retry (D6).
@@ -126,7 +126,7 @@ API track: 3.1 → 3.2, 3.3. UI track: 3.4 → 3.5. The UI codes against PLAN §
 - **Repo:** API · **PLAN:** §5 (Shared rules)
 - **Owns:** `service/ai/AiClient`, `service/ai/AiQuotaService`, `config/AiConfig`, and `src/main/resources/prompts/` (the directory; feature tasks add their own template).
 - **Changes:**
-  - `spring.ai.retry.max-attempts=1` in `application.properties` (D2).
+  - `spring.ai.retry.max-attempts=0` in `application.properties` (D2: the property is a retry count).
   - `AiConfig`: the `ChatClient` bean (from the auto-configured `ChatClient.Builder`) and a virtual-thread executor for `AiClient`.
   - `AiClient.<T> T call(String template, Map<String, Object> userData, Class<T> type, Locale locale)`: builds the messages (D4), calls the model with the deadline and retry (D2), converts with `.entity(type)`, runs Bean Validation (D6), and maps failures to `AI_INVALID_RESPONSE` or `AI_UNAVAILABLE`. `isTransient` per D1.
   - `AiQuotaService.consume(UUID userId)` per D3.
