@@ -1,6 +1,6 @@
 # Wave 2: Tasks
 
-**Status:** draft, decisions D1–D8 proposed, awaiting the maintainer (2026-10-07) · **PLAN:** §0 (Overdue, "Today", Subtasks), §1, §2, §4, §6 (dashboard and detail), §9 phase 2
+**Status:** planned, all decisions confirmed (2026-10-07) · **PLAN:** §0 (Overdue, "Today", Subtasks), §1, §2, §4, §6 (dashboard and detail), §9 phase 2
 
 ## Goal
 
@@ -16,7 +16,7 @@ A logged-in user can create, view, edit, and delete their own tasks, change a ta
 
 ## Decisions for this wave
 
-**Proposed, not yet confirmed.** D1 restates decisions already in PLAN. D2–D8 are new, and D4–D6 change PLAN wording, so the orchestrator folds them into PLAN after the wave. Details below the table.
+Confirmed by the maintainer on 2026-10-07. D1 restates decisions already in PLAN. D2–D8 are new, and D4–D6 change PLAN wording, so the orchestrator folds them into PLAN after the wave. Details below the table.
 
 | # | Decision | Outcome |
 |---|---|---|
