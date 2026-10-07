@@ -134,6 +134,22 @@ Errors that Spring MVC raises itself get a `code` from their status: 400 → `VA
   * **Then** the API always returns `200` (whether or not the email exists). If the email exists, the system emails a single-use link that expires in 30 minutes.
   * **And** when they submit a new password with a valid token, the password is updated and the token is consumed. If the token is expired or already used, the API returns `400`.
 
+### Field limits
+
+Sign-up fields (anything else is `400 VALIDATION_ERROR`):
+
+| Field | Rule |
+|---|---|
+| `email` | Required, a valid email, at most 100 characters. |
+| `name` | Required, not only spaces, at most 100 characters. Leading and trailing spaces are stripped before saving. |
+| `password` | Required, at least 8 characters and at most 72 **UTF-8 bytes** (BCrypt only uses the first 72 bytes). Spaces are allowed and kept. No other complexity rules. |
+
+Sign-in only requires `email` and `password` to be non-blank. It checks no formats or lengths, so a failed sign-in never reveals the sign-up rules. Anything that doesn't match, including a password over 72 bytes, is `401 BAD_CREDENTIALS`.
+
+### Email case
+
+Emails are case-insensitive. The API stores them lowercase (`Locale.ROOT`) and lowercases them on sign-in, and `/users/me` and `AuthResponse.user` return the stored lowercase email. The database enforces it too, with a unique index on `LOWER(EMAIL)`, so no write path can create two accounts that differ only in case. A concurrent sign-up that hits either email constraint returns `409 EMAIL_ALREADY_USED`, not `500`.
+
 ### Endpoints
 
 | Method | Endpoint | Description | Request | Response |

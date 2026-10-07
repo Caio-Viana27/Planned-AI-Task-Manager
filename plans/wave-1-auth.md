@@ -1,6 +1,6 @@
 # Wave 1: Auth
 
-**Status:** planned, all decisions confirmed (2026-10-06) · **PLAN:** §0 (Logout, JWT, Roles, User name), §2 (Errors: 401, 409), §3 (except Phase 5), §6 (Auth), §9 phase 1
+**Status:** done (2026-10-07) · **PLAN:** §0 (Logout, JWT, Roles, User name), §2 (Errors: 401, 409), §3 (except Phase 5), §6 (Auth), §9 phase 1
 
 ## Goal
 

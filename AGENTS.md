@@ -76,6 +76,7 @@ If a check can't be run, say so explicitly. Never claim it passed.
 - Planning docs (`PLAN.md`, `TASKS.md`, `plans/`) say that a migration is needed and what it does, never its version number. The agent writing the migration takes the next free `V{n}` at that time, so parallel or reordered work never fights over a number.
 - Lookup tables (`PRIORITIES`, `TASK_STATUS`, `COMPLEXITIES`, `ROLE`) are seeded in migrations. Reference their names, not hard-coded IDs.
 - Tasks belong to `USER_ID`. Always scope task queries to the authenticated user.
+- Timestamp columns are `TIMESTAMP` (no time zone) holding UTC. Entities map them as `Instant`, set from the injected `Clock`, never `LocalDateTime` or `Instant.now()`. `application.properties` sets Hibernate's `preferred_instant_jdbc_type=TIMESTAMP` and `jdbc.time_zone=UTC` so `ddl-auto=validate` accepts them.
 
 ### Tests
 
