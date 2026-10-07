@@ -90,6 +90,7 @@ The service layer enforces the depth limit (§0) and creates every subtask with 
   - `OVERDUE` with a `dueDate` of today or later, or none, goes back to `TODO`.
   - `DONE` always sticks. Marking an `OVERDUE` task `DONE` is allowed.
 - A scheduled job (`@Scheduled`, daily at 00:05 in `app.timezone`) applies the same rule in bulk, so tasks whose due date passes while nobody edits them become `OVERDUE`.
+- Moving a task to `DONE` (from any other status) marks every descendant, at every depth, `DONE` too. Subtasks that are already `DONE` are untouched. Reopening the task leaves its subtasks as they are.
 - A parent's status is **not** changed automatically by its subtasks in v1.
 
 ### Errors

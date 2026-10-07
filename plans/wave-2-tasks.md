@@ -1,6 +1,6 @@
 # Wave 2: Tasks
 
-**Status:** done (2026-10-07); D4–D8 folded into PLAN · **PLAN:** §0 (Overdue, "Today", Subtasks), §1, §2, §4, §6 (dashboard and detail), §9 phase 2
+**Status:** done (2026-10-07), plus addendum D9 (T2.9–T2.10); D4–D9 folded into PLAN · **PLAN:** §0 (Overdue, "Today", Subtasks), §1, §2, §4, §6 (dashboard and detail), §9 phase 2
 
 ## Goal
 
@@ -28,6 +28,7 @@ Confirmed by the maintainer on 2026-10-07. D1 restates decisions already in PLAN
 | D6 | UI edits use `PATCH` | The edit form sends `PATCH` with only the changed fields. `PUT` stays in the API for API clients. See below. |
 | D7 | Stable list order | Every sort gets the tie-breakers `createdAt,desc` then `id,asc`, so pages never repeat or skip a task. `dueDate` sorts nulls last in both directions. |
 | D8 | Text search | `q` is trimmed; blank means no filter. At most 100 characters (else `400 VALIDATION_ERROR`). Matching is a case-insensitive `LIKE '%q%'` on title and description, with `%`, `_`, and `\` escaped. No full-text index in v1. |
+| D9 | Completing a task (addendum) | Moving a task to `DONE` marks its whole subtree `DONE`. Reopening it leaves its subtasks alone. Added by the maintainer on 2026-10-07 after the wave. See below. |
 
 ### D1: task tree
 
@@ -78,6 +79,16 @@ The task object the UI holds can have `status: OVERDUE`. A full `PUT` of the edi
 - The status control offers `TODO`, `IN_PROGRESS`, and `DONE`. On an `OVERDUE` task it also shows `OVERDUE` as the current, disabled option.
 - The UI never decides overdue-ness itself: the overdue marker comes from `status === 'OVERDUE'`, never from comparing dates in the browser.
 - Dates stay `YYYY-MM-DD` strings end to end (native `<input type="date">`). Never `new Date(dueDate)`, which shifts by time zone.
+
+### D9: completing a task
+
+Added after the wave closed, as T2.9 (API) and T2.10 (UI). It's the opposite direction from the out-of-scope "deriving a parent's status from its subtasks", which still doesn't happen.
+
+- When a `PUT` or `PATCH` moves a task **to `DONE` from another status**, every descendant at every depth that isn't `DONE` becomes `DONE`, with `updatedAt` from the `Clock`. It's one recursive-CTE `UPDATE` in the same transaction, filtered by `USER_ID`.
+- Only the transition triggers it. Re-sending `DONE` on a task that is already `DONE` doesn't re-close subtasks the user has reopened since.
+- `DONE` descendants are untouched, including their `updatedAt`. Ancestors and siblings never change.
+- Reopening a `DONE` task leaves its subtasks as they are; earlier statuses aren't stored. Creating a subtask under a `DONE` task is still allowed.
+- The response is still just the written task. The UI refreshes every cached task after a write that returns `DONE`. There is no confirmation dialog.
 
 ## Current state
 
@@ -245,6 +256,29 @@ API track: 2.1 → 2.2 → 2.3, 2.4, 2.5. UI track: 2.6 → 2.7, 2.8. The tasks 
   - the add-subtask form shows on a subtask with `canAddSubtasks: true` and is hidden when it's `false`
   - delete asks for confirmation, then navigates to the parent
 - **Commit:** `feat(ui): add task create, detail, edit, delete and subtasks`
+
+### 2.9 API: completing a task completes its subtree (addendum, D9)
+
+- **Repo:** API · **Depends on:** T2.2 · **PLAN:** §2 (Status rules)
+- **Changes:** `TaskRepository.completeSubtree` (a native recursive-CTE `UPDATE`); `TaskService.update` and `patch` call it when the task moves to `DONE`; the `PUT` and `PATCH` OpenAPI descriptions mention it.
+- **Acceptance:**
+  - `PATCH` and `PUT` to `DONE` complete every descendant (`TODO`, `IN_PROGRESS`, `OVERDUE`) with `updatedAt` = now
+  - already-`DONE` descendants keep their `updatedAt`
+  - a mid-level task leaves its ancestors and siblings open
+  - reopening leaves the subtasks `DONE`
+  - editing a task that is already `DONE` doesn't re-close a reopened subtask
+  - another user's rows are never touched
+- **Commit:** `feat(api): complete the whole subtree when a task is marked done`
+
+### 2.10 UI: refresh subtasks after a task is marked done (addendum, D9)
+
+- **Repo:** UI · **Depends on:** T2.9, T2.7, T2.8
+- **Changes:** `invalidateTaskUpdate` in `src/api/queries/tasks.ts`: after a write that returns `DONE`, invalidate every list and every `['task', id]`; otherwise, as before. It's used by `usePatchTask`, `useUpdateTask`, and the dashboard's `useToggleTaskDone`.
+- **Acceptance:**
+  - a patch or update returning `DONE` invalidates every cached task
+  - any other status invalidates only the task and its parent
+  - the done toggle does the same
+- **Commit:** `feat(ui): refresh subtasks after a task is marked done`
 
 > **Checkpoint B (wave done):** run `docker compose up --build`. Create a task, add subtasks down to depth 5 (the add form disappears there), and follow the breadcrumb back up. Filter, sort, and page the dashboard, reload, and the filters survive. Toggle a task done from the list. Create a task due yesterday and see `OVERDUE`. Delete a mid-level task and its subtree is gone. Switch to PT-BR. Run `./mvnw test` in the API and `npm run lint && npm run build && npm test` in the UI. Then commit the submodule pointers in the root: `chore: bump submodules (wave 2)`.
 

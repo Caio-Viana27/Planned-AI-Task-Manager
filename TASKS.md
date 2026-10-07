@@ -72,6 +72,7 @@ Wave 0  T0.1 (root) · T0.2 (API) · T0.3 (UI)
 Wave 1  T1.1 → T1.2 → T1.3 → T1.4 (API)  ‖  T1.5 → T1.6 → T1.7 (UI)   (see plans/wave-1-auth.md)
 Wave 2  T2.1 (API) → T2.2 (API) → { T2.3, T2.4, T2.5 } (API)
         T2.6 (UI) → { T2.7, T2.8 } (UI)   (see plans/wave-2-tasks.md)
+        Addendum D9: T2.9 (API, after T2.2) → T2.10 (UI, after T2.7, T2.8)
 Wave 3  T3.1 (API) → { T3.2, T3.3 } (API)
         { T3.4, T3.5 } (UI, after T2.8)
 Wave 4  T4.1 (API) ‖ T4.2 (UI)
@@ -212,6 +213,8 @@ The task cards for this wave live in [`plans/wave-2-tasks.md`](plans/wave-2-task
 | T2.6 | Task API layer and shared components | UI |
 | T2.7 | Dashboard | UI |
 | T2.8 | Task form, detail, and subtasks | UI |
+| T2.9 | Completing a task completes its subtree (addendum, D9) | API |
+| T2.10 | Refresh subtasks after a task is marked done (addendum, D9) | UI |
 
 ## Wave 3: AI suggest and breakdown (PLAN §5)
 
