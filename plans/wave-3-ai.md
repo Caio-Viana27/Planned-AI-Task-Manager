@@ -1,6 +1,6 @@
 # Wave 3: AI suggest and breakdown
 
-**Status:** draft, decisions D1–D9 proposed, awaiting the maintainer (2026-10-07) · **PLAN:** §0 (Subtasks), §2 (Errors: 422, 429, 503), §5 (shared rules, Suggest and Breakdown scenarios and endpoints), §6 (AI UX), §8, §9 phase 3
+**Status:** planned, all decisions confirmed (2026-10-07) · **PLAN:** §0 (Subtasks), §2 (Errors: 422, 429, 503), §5 (shared rules, Suggest and Breakdown scenarios and endpoints), §6 (AI UX), §8, §9 phase 3
 
 ## Goal
 
@@ -17,7 +17,7 @@ A logged-in user can ask the AI to improve a task. Gemini rewrites the title and
 
 ## Decisions for this wave
 
-**Proposed, not yet confirmed.** D1, D2, D5, and D7 change PLAN wording, so the orchestrator folds them into PLAN after the wave. Details below the table.
+Confirmed by the maintainer on 2026-10-07. D1, D2, D5, and D7 change PLAN wording, so the orchestrator folds them into PLAN after the wave. Details below the table.
 
 | # | Decision | Outcome |
 |---|---|---|
