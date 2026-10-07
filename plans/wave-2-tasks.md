@@ -1,6 +1,6 @@
 # Wave 2: Tasks
 
-**Status:** planned, all decisions confirmed (2026-10-07) · **PLAN:** §0 (Overdue, "Today", Subtasks), §1, §2, §4, §6 (dashboard and detail), §9 phase 2
+**Status:** done (2026-10-07); D4–D8 folded into PLAN · **PLAN:** §0 (Overdue, "Today", Subtasks), §1, §2, §4, §6 (dashboard and detail), §9 phase 2
 
 ## Goal
 

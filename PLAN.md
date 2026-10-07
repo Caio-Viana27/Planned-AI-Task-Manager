@@ -28,6 +28,7 @@ These decisions resolve ambiguities in earlier drafts. Change them here first if
 - `TASK.PARENT_TASK_ID UUID NULL REFERENCES TASK(ID) ON DELETE CASCADE`, with `CHECK (PARENT_TASK_ID <> ID)` and an index on `PARENT_TASK_ID`. A column holds exactly one parent per task, and the cascade deletes a whole subtree at any depth.
 - Drop `TASK_SUBTASK`. It's empty, because no endpoint wrote tasks before this migration. V1 itself isn't edited.
 - An index on `TASK (USER_ID, STATUS_ID, DUE_DATE)` for listing and filtering.
+- `TASK.POSITION INT NOT NULL DEFAULT 0`: the order of a task among its siblings, in creation order (request order for a batch, including accepted AI drafts). It's internal and never appears in the API. Top-level tasks keep `0`.
 
 The service layer enforces the depth limit (§0) and creates every subtask with its parent's `USER_ID`. The database doesn't check depth.
 
@@ -84,8 +85,11 @@ The service layer enforces the depth limit (§0) and creates every subtask with 
 
 - A user may set `TODO`, `IN_PROGRESS`, or `DONE`, and may move between them freely (e.g. reopen a `DONE` task).
 - Only the system sets `OVERDUE`. If a user sends `OVERDUE`, the API returns `400 INVALID_STATUS`.
-- A scheduled job (`@Scheduled`, daily at 00:05 in `app.timezone`) moves tasks with `status IN (TODO, IN_PROGRESS)` and `dueDate < today` to `OVERDUE`.
-- If the user changes the `dueDate` of an `OVERDUE` task to today or later, or clears it, the status goes back to `TODO`. Marking an `OVERDUE` task `DONE` is allowed.
+- The overdue rule runs after every write (create, `PUT`, `PATCH`, subtask create), with "today" from `app.timezone`:
+  - `TODO` or `IN_PROGRESS` with `dueDate < today` becomes `OVERDUE`. Sending `TODO` or `IN_PROGRESS` on a task that is still late ends up `OVERDUE` again, and the response shows it.
+  - `OVERDUE` with a `dueDate` of today or later, or none, goes back to `TODO`.
+  - `DONE` always sticks. Marking an `OVERDUE` task `DONE` is allowed.
+- A scheduled job (`@Scheduled`, daily at 00:05 in `app.timezone`) applies the same rule in bulk, so tasks whose due date passes while nobody edits them become `OVERDUE`.
 - A parent's status is **not** changed automatically by its subtasks in v1.
 
 ### Errors
@@ -230,13 +234,17 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
 - `status`: repeatable, e.g. `status=TODO&status=OVERDUE`
 - `priority`, `complexity`: repeatable
 - `dueFrom`, `dueTo`: ISO dates, inclusive
-- `q`: case-insensitive match on title and description
+- `q`: case-insensitive substring match on title and description. Trimmed; blank means no filter; at most 100 characters. `%`, `_`, and `\` match literally. No full-text index in v1.
 - `includeSubtasks`: default `false`, which lists only top-level tasks (no parent). `true` lists tasks at every depth.
 - `page`: default `0`
-- `size`: default `20`, max `100`
-- `sort`: default `dueDate,asc`. Allowed fields: `dueDate`, `priority`, `createdAt`, `title`.
+- `size`: default `20`, capped at `100`. `page` < 0 or `size` < 1 returns `400`.
+- `sort`: default `dueDate,asc`. Allowed fields: `dueDate`, `priority`, `createdAt`, `title`; any other returns `400 VALIDATION_ERROR`. `priority` sorts by seed order (`LOW < MEDIUM < HIGH`), so `priority,desc` puts `HIGH` first. `dueDate` sorts tasks without a due date last in both directions. Every sort is followed by the tie-breakers `createdAt,desc` then `id,asc`, so pages never repeat or skip a task.
 
 **Page response:** `{ content: [Task], page, size, totalElements, totalPages }`.
+
+**Subtask order:** `POST /tasks/{id}/subtasks` adds the new subtasks after the existing ones, in request order. `subtasks` in `GET /tasks/{id}` is ordered by `POSITION` (§1), then `createdAt`, then `id`.
+
+**UI edits use `PATCH`:** the edit form sends only the changed fields, so it never sends back an `OVERDUE` status. Its status control offers `TODO`, `IN_PROGRESS`, and `DONE`, and shows `OVERDUE` as the current, disabled option on an overdue task. The UI never decides overdue-ness itself: it reads `status === 'OVERDUE'`. Dates stay `YYYY-MM-DD` strings end to end.
 
 ## 5. AI features (Google Gemini via Spring AI)
 
