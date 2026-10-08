@@ -1,6 +1,6 @@
 # Wave 4: Chat assistant
 
-**Status:** draft (2026-10-07); decisions D1–D9 await the maintainer's confirmation · **PLAN:** §0 (Chat), §2 (Errors: 400, 422, 429, 503), §5 (shared rules, Chat scenario and endpoint), §6 (chat side panel), §8, §9 phase 4
+**Status:** in progress (2026-10-07); D1–D9 confirmed. T4.1 and T4.2 are merged into the submodules' `main`, and `./mvnw test` and the UI checks pass. Checkpoints A and B haven't been run yet · **PLAN:** §0 (Chat), §2 (Errors: 400, 422, 429, 503), §5 (shared rules, Chat scenario and endpoint), §6 (chat side panel), §8, §9 phase 4
 
 ## Goal
 
@@ -17,7 +17,7 @@ A logged-in user opens a side panel on any authenticated page and asks about the
 
 ## Decisions for this wave
 
-Proposed on 2026-10-07; the orchestrator confirms them with the maintainer before handing out tasks. D1–D6 of wave 3 (`AiClient`, retry and timeout, quota, prompt layout, locale, output validation) apply unchanged. Details below the table.
+Confirmed by the maintainer on 2026-10-07. D1–D6 of wave 3 (`AiClient`, retry and timeout, quota, prompt layout, locale, output validation) apply unchanged. Details below the table.
 
 | # | Decision | Outcome |
 |---|---|---|
