@@ -1,6 +1,6 @@
 # Wave 3: AI suggest and breakdown
 
-**Status:** implemented (2026-10-07): T3.1–T3.5 committed, `./mvnw test` and the UI checks pass. Checkpoint A passed (2026-10-07, real Gemini key); Checkpoint B is pending · **PLAN:** §0 (Subtasks), §2 (Errors: 422, 429, 503), §5 (shared rules, Suggest and Breakdown scenarios and endpoints), §6 (AI UX), §8, §9 phase 3
+**Status:** implemented (2026-10-07): T3.1–T3.5 committed, `./mvnw test` and the UI checks pass. Checkpoint A passed (2026-10-07, real Gemini key); Checkpoint B passed (2026-10-07, real Gemini key, `gemini-3.5-flash-lite`, headless Chromium on the real UI), with an open latency issue: 3 of 7 real calls hit the 20 s `app.ai.timeout` (the rest took 8.8–12.7 s), so AI calls often need a manual retry · **PLAN:** §0 (Subtasks), §2 (Errors: 422, 429, 503), §5 (shared rules, Suggest and Breakdown scenarios and endpoints), §6 (AI UX), §8, §9 phase 3
 
 ## Goal
 
