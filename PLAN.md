@@ -254,7 +254,7 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
 - All model access goes through one provider-neutral `AiClient` (in `service/ai/`). Controllers and feature services (`TaskSuggestionService`, `TaskBreakdownService`, the chat service) never touch `ChatModel`/`ChatClient` directly. Provider-specific code lives in only three places: the Spring AI starter in `pom.xml`, the `spring.ai.*` properties, and `AiClient.isTransient`, which classifies provider errors.
 - **Structured output:** responses are mapped to Java records with Spring AI's structured output converter. Enum fields are checked against the lookup names. If parsing or validation fails, the API returns `422 AI_INVALID_RESPONSE`.
 - **Resilience:**
-  - One deadline of 20 s (`app.ai.timeout`) covers the whole call, retry included, so the worst case is about 20 s.
+  - One deadline of 60 s (`app.ai.timeout`) covers the whole call, retry included, so the worst case is about 60 s. The UI's nginx proxy waits 75 s, so it never cuts an AI call short.
   - One retry, only on transient errors (a provider `429`, a `5xx`, or an I/O error) and only while the deadline hasn't passed. A timeout isn't retried.
   - Spring AI's own retry is off (`spring.ai.retry.max-attempts=0`), so `AiClient` is the only place that retries.
   - Timeouts, provider `429`s and `5xx`s, and other model errors (e.g. a bad key) return `503 AI_UNAVAILABLE`.
