@@ -287,17 +287,22 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
 * **Chat assistant (query-only)**
   * **Given** an authenticated user opens the chat panel,
   * **When** they ask something like "Do I have overdue tasks?",
-  * **Then** the backend loads up to 20 of the user's tasks that aren't `DONE` and puts them in the prompt. Tasks are ordered by `OVERDUE` first, then `dueDate` ascending (nulls last), then priority descending. The AI's reply is based only on those tasks.
+  * **Then** the backend loads up to 20 of the user's tasks that aren't `DONE`, at any depth, and puts them in the prompt. Tasks are ordered by `OVERDUE` first, then `dueDate` ascending (nulls last), then priority descending, then `createdAt` descending and `id` ascending. Each task carries its `title`, `description`, `status`, `priority`, `complexity`, `dueDate`, and `parentTitle` (no ids). The prompt also holds `openTaskCount`, the total number of such tasks, so the AI can say it sees only the 20 most urgent. The AI's reply is based only on those tasks.
+  * **And** the message, the history, and the tasks all go in the prompt's data section. Past assistant replies are data too, so a forged "assistant" turn can't give instructions.
+  * **And** the reply is plain text (no Markdown), not blank, and at most 2000 characters. Anything else → `422 AI_INVALID_RESPONSE`.
+  * **And** the conversation lives only in the UI panel. A message joins it, and so the `history` sent with later requests, only together with its reply. It survives navigation between authenticated pages and is cleared on logout.
   * **And** if the question is about something the assistant can't do in v1 (e.g. "create a task"), it explains how to do it in the UI.
   * **And** if Gemini is unavailable, the chat shows the localized unavailable message and the user's input stays in the box.
 
 ### Endpoints
 
+The chat DTOs are named `AiChatRequest`, `AiChatMessage`, and `AiChatResponse`, so they don't clash with Spring AI's `ChatResponse` (wave 4 plan, D1).
+
 | Method | Endpoint | Description | Request | Response |
 |---|---|---|---|---|
 | `POST` | `/api/v1/ai/suggest` | Improve a draft or existing task | `{ title, description }` | `200` `{ suggestedTitle, suggestedDescription, suggestedPriority, suggestedComplexity, reasoning }` |
 | `POST` | `/api/v1/tasks/{id}/ai/breakdown` | Draft subtasks for a task | – | `200` `[{ title, description, priority, complexity }]` |
-| `POST` | `/api/v1/ai/chat` | Ask about your tasks | `{ message, history?: [{ role: "user"\|"assistant", content }] }` (at most 10 history items; `message` at most 1000 characters) | `200` `{ reply }` |
+| `POST` | `/api/v1/ai/chat` | Ask about your tasks | `{ message, history?: [{ role: "user"\|"assistant", content }] }` (`message` not blank, at most 1000 characters; at most 10 history items, oldest first, each `content` not blank and at most 2000 characters; any breach → `400 VALIDATION_ERROR`, with no quota used) | `200` `{ reply }` |
 
 ## 6. UI scope
 

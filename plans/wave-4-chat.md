@@ -1,6 +1,6 @@
 # Wave 4: Chat assistant
 
-**Status:** in progress (2026-10-07); D1–D9 confirmed. T4.1 and T4.2 are merged into the submodules' `main`, and `./mvnw test` and the UI checks pass. Checkpoints A and B haven't been run yet · **PLAN:** §0 (Chat), §2 (Errors: 400, 422, 429, 503), §5 (shared rules, Chat scenario and endpoint), §6 (chat side panel), §8, §9 phase 4
+**Status:** done (2026-10-07); D1–D9 confirmed, and D1–D4 and D8 folded into PLAN §5, D7 into the `TASKS.md` hotspot table. T4.1 and T4.2 committed, `./mvnw test` and the UI checks pass. Checkpoints A and B passed (2026-10-07, maintainer, real key); Checkpoint A's latency numbers weren't recorded here · **PLAN:** §0 (Chat), §2 (Errors: 400, 422, 429, 503), §5 (shared rules, Chat scenario and endpoint), §6 (chat side panel), §8, §9 phase 4
 
 ## Goal
 
