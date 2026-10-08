@@ -1,10 +1,19 @@
 # Wave 4: Chat assistant
 
-**Status:** done (2026-10-07); D1–D9 confirmed, and D1–D4 and D8 folded into PLAN §5, D7 into the `TASKS.md` hotspot table. T4.1 and T4.2 committed, `./mvnw test` and the UI checks pass. Checkpoints A and B passed (2026-10-07, maintainer, real key); Checkpoint A's latency numbers weren't recorded here · **PLAN:** §0 (Chat), §2 (Errors: 400, 422, 429, 503), §5 (shared rules, Chat scenario and endpoint), §6 (chat side panel), §8, §9 phase 4
+**Status:** done (2026-10-07); D1–D9 confirmed, and D1–D4 and D8 folded into PLAN §5, D7 into the `TASKS.md` hotspot table. T4.1 and T4.2 committed, `./mvnw test` and the UI checks pass. Checkpoints A and B passed (2026-10-07, maintainer, real key); Checkpoint A's latency numbers weren't recorded here. Plus addendum D10–D14 (T4.3–T4.5): AI task analysis and estimated hours, planned 2026-10-08, not started · **PLAN:** §0 (Chat), §2 (Errors: 400, 422, 429, 503), §5 (shared rules, Chat scenario and endpoint), §6 (chat side panel), §8, §9 phase 4
 
 ## Goal
 
 A logged-in user opens a side panel on any authenticated page and asks about their tasks in natural language ("Do I have overdue tasks?", "What should I do first?"). The API puts up to 20 of the user's open tasks in the prompt, most urgent first, and the AI answers only from them, in the user's language. The assistant is read-only: when asked to create or edit a task, it explains how to do that in the UI. Nothing is stored. The conversation lives in the panel until logout. Every call goes through wave 3's `AiClient`, so it is time-limited, retried at most once, and counted against the hourly quota, and every failure becomes `422`, `429`, or `503` with a localized message and the user's text still in the input. Tests never reach Gemini.
+
+**Addendum (D10–D14):** on a saved task's detail page, an "Analyze with AI" button between Edit and Delete asks the AI to review the existing task and suggest a priority, a complexity, an estimated effort in hours, and a short reason, in the user's language:
+
+```json
+{ "priority": "HIGH", "complexity": "MEDIUM", "estimatedHours": 8,
+  "reason": "A tarefa envolve autenticação, controle de acesso e integração com o banco de dados." }
+```
+
+Estimated hours become a stored, editable task field. Accepting the analysis fills the edit form with the chosen fields; nothing is saved until the user clicks Save (PLAN §5, "Accepting suggestions").
 
 ## Out of scope
 
@@ -14,10 +23,11 @@ A logged-in user opens a side panel on any authenticated page and asks about the
 - Search or retrieval beyond the 20 most urgent open tasks (no embeddings, no paging through tasks).
 - Fixing wave 3's open latency issue (see D9). This wave measures it again.
 - Tests against the real Gemini API. The manual checkpoints use a real key only when one is available.
+- Addendum: analysis from the dashboard row menu or the create form; storing the analysis `reason`; estimated hours on subtask creation (`POST /tasks/{id}/subtasks`) and in breakdown drafts; showing or sorting by hours in the dashboard list; adding hours to the chat context.
 
 ## Decisions for this wave
 
-Confirmed by the maintainer on 2026-10-07. D1–D6 of wave 3 (`AiClient`, retry and timeout, quota, prompt layout, locale, output validation) apply unchanged. Details below the table.
+D1–D9 confirmed by the maintainer on 2026-10-07; D10–D14 added by the maintainer on 2026-10-08, after the wave. D1–D6 of wave 3 (`AiClient`, retry and timeout, quota, prompt layout, locale, output validation) apply unchanged. Details below the table.
 
 | # | Decision | Outcome |
 |---|---|---|
@@ -30,6 +40,11 @@ Confirmed by the maintainer on 2026-10-07. D1–D6 of wave 3 (`AiClient`, retry 
 | D7 | Panel placement | T4.2 passes `chatPanel={<ChatPanel />}` to the **protected** `AppLayout` in `src/routes/router.tsx`: a one-line, approved exception to the router hotspot rule. Guest pages get no panel. Both protected routes share that one layout element, so the conversation survives navigation between them. |
 | D8 | Conversation state | Messages live in `ChatPanel` state only. A message is added to the list only after the reply arrives: on success the user message and the reply are appended together; on failure nothing is appended and the input keeps its text. Each request sends the last 10 list items as `history`. Logout unmounts the protected layout, which clears the chat; a test pins it. |
 | D9 | Latency | No timeout change in this wave: `app.ai.timeout` stays 20 s. The chat prompt is larger than suggest's, so Checkpoint A records the latency of at least 5 real calls. If timeouts stay frequent, raising `app.ai.timeout` or picking a faster `AI_MODEL` is a separate maintainer decision. |
+| D10 | Estimated hours field (addendum) | A new migration (the next free `V{n}`) adds `TASK.ESTIMATED_HOURS INT NULL` with `CHECK (ESTIMATED_HOURS BETWEEN 1 AND 999)`. The Task object gains `estimatedHours: integer \| null`. Optional on `POST /tasks`, `PUT`, and `PATCH` (in `PATCH`, absent = unchanged and `null` clears it, like `complexity`). Out of range or not an integer → `400 VALIDATION_ERROR`. Not on subtask create. |
+| D11 | Analysis endpoint (addendum) | `POST /api/v1/tasks/{id}/ai/analysis`, no body, with `Accept-Language` → `200 { priority, complexity, estimatedHours, reason }`, in `TaskAiController` beside breakdown. Never writes. The ownership check (`404 TASK_NOT_FOUND`) runs before any quota is used (wave 3, D3). Works on a task in any status. |
+| D12 | Analysis prompt data (addendum) | `{ task: { title, description, status, dueDate, priority, complexity, estimatedHours }, ancestors: [titles, root first], subtasks: [{ title, status }] }`, direct subtasks only. The current values are there so the AI can keep or change them; `analysis.st` says so and treats `<data>` as data only. |
+| D13 | Analysis output (addendum) | `dto/TaskAnalysisResponse`: `priority` and `complexity` not blank and among the lookup names (complexity always set), `estimatedHours` an integer 1–999, `reason` not blank, ≤ 1000 characters, plain text, in the request language. Anything else → `422 AI_INVALID_RESPONSE` (wave 3, D6). |
+| D14 | Analysis UI flow (addendum) | "Analyze with AI" sits between Edit and Delete and is hidden while editing, like them. The result shows under the header: current vs suggested priority, complexity, and hours, each with a checkbox (all checked), the reason, and "Apply to form" / "Dismiss". Applying opens the edit form with the task's values merged with the checked fields; Save sends only the changed fields via `PATCH` (`diffTaskForm`). Errors use `ErrorMessage` and leave the page unchanged. New i18n namespace `aiAnalysis.json`. |
 
 ### D4: chat context
 
@@ -73,6 +88,11 @@ After Wave 3:
 - API tests: `support/IntegrationTest` mocks `ChatModel`; `support/AiStubs` stubs canned JSON or an exception and captures the `Prompt`. `MutableClock` and `TestRows` exist.
 - UI: `AppLayout` takes an optional `chatPanel` and renders it in a `w-80` `<aside>`, but `router.tsx` never passes one. `apiRequest` sends `Accept-Language`. `src/api/ai.ts` and `src/api/aiBreakdown.ts` show the mutation-hook pattern (wave 3, D9).
 - UI: `errors.json` has `AI_INVALID_RESPONSE`, `AI_RATE_LIMITED`, `AI_UNAVAILABLE`, and `VALIDATION_ERROR` in both locales; `ErrorMessage` renders them. There is no `src/features/chat/` and no `chat.json`.
+
+After T4.1 and T4.2 (for the addendum):
+
+- API: `TaskBreakdownService` is the pattern for a task-scoped AI call: `taskService.loadOwned` → `quotaService.consume` → `AiClient.call` → lookup-name check, not transactional. `TaskAiController` hosts task-scoped AI endpoints. `TaskRepository.findAncestors` and `findChildren` give the D12 context. `PatchTaskRequest` tracks field presence, so a clearable field is one more constant left out of `@NotNullWhenPresent`.
+- UI: `TaskDetailView` holds the Edit and Delete buttons and already mounts `TaskForm`, which takes `initialValues`. `taskToFormValues` and `diffTaskForm` live in `features/tasks/form/taskForm.ts`. `AiSuggestSlot` and `SuggestReview` show the mutation hook and the review-with-checkboxes pattern.
 
 ## Tasks
 
@@ -125,9 +145,66 @@ T4.1 (API) and T4.2 (UI) run in parallel. The UI codes against PLAN §5 plus D1�
 
 > **Checkpoint B (wave done):** run `docker compose up --build` with a real key. Open the panel on the dashboard, ask about overdue tasks, then follow up ("and which one is most urgent?") and check the reply uses the earlier turn. Navigate to a task and back: the conversation is still there. Switch to PT-BR and ask again: the reply is in Portuguese. Ask it to create a task: it explains the UI steps and the task list doesn't change. Use a bad key or stop the network: the unavailable message shows and the input keeps its text. Log out and back in: the chat is empty. Without a key, the AI steps are skipped, never passed. Run `./mvnw test` in the API and `npm run lint && npm run build && npm test` in the UI. Then commit the submodule pointers in the root: `chore: bump submodules (wave 4)`.
 
+### 4.3 API: estimated hours field (addendum, D10)
+
+- **Repo:** API · **Depends on:** T2.2 · **PLAN:** §1, §2, §4
+- **Changes:**
+  - The D10 migration.
+  - `Task.estimatedHours` (`Integer`) and `TaskResponse.estimatedHours`.
+  - An optional `@Min(1) @Max(999) Integer estimatedHours` on `CreateTaskRequest`, `UpdateTaskRequest`, and `PatchTaskRequest` (a new `ESTIMATED_HOURS` constant, clearable, so not in `@NotNullWhenPresent`).
+  - `TaskService` create, update, and patch map it. OpenAPI examples.
+- **Acceptance:**
+  - create with and without hours; `GET` returns it, `null` when unset
+  - `PATCH` sets it, `PATCH` with `null` clears it, `PATCH` without it leaves it; `PUT` sets it
+  - `0`, `1000`, and `2.5` → 400
+  - the database check rejects an out-of-range value written directly
+- **Verify:** `./mvnw test`
+- **Commit:** `feat(api): add estimated hours to tasks`
+
+### 4.4 API: task analysis (addendum, D11–D13)
+
+- **Repo:** API · **Depends on:** T4.3, T3.1 · **PLAN:** §5
+- **Owns:** `service/ai/TaskAnalysisService`, `dto/TaskAnalysisResponse`, `prompts/analysis.st`, and the `analysis` method in `controller/TaskAiController`.
+- **Changes:**
+  - `TaskAnalysisService.analyze(taskId, locale)`, following `TaskBreakdownService`: `taskService.loadOwned` → `quotaService.consume` → the D12 data map → `aiClient.call("analysis", data, TaskAnalysisResponse.class, locale)` → the lookup-name check. Not transactional, so no connection is held during the AI call. No retry or timeout code (wave 3, D1 and D2).
+  - `analysis.st` like `suggest.st`: `{today}`, `{zone}`, `{language}`, `{priorities}`, and `{complexities}`, the D13 limits, and `<data>` as data only.
+  - OpenAPI: summary, a description that mentions the quota and that nothing is saved, and the 401, 404, 422, 429, and 503 responses.
+- **Acceptance:** integration tests with the mocked `ChatModel` (`support/AiStubs`):
+  - success returns the four fields; in `pt-BR` the captured prompt names Brazilian Portuguese
+  - the captured prompt holds the task's current values, its ancestor titles root first, and its direct subtasks
+  - another user's task → 404, with the model never called and no quota used
+  - an unknown priority, a null complexity, `estimatedHours` 0 or 1000, a blank or 1001-character reason → 422
+  - a model failure → 503; the quota exhausted → 429; unauthenticated → 401
+  - no `TASK` rows change
+- **Verify:** `./mvnw test`
+- **Commit:** `feat(api): add AI task analysis endpoint`
+
+### 4.5 UI: estimated hours and "Analyze with AI" (addendum, D10, D14)
+
+- **Repo:** UI · **Depends on:** T2.8, T3.4 · **PLAN:** §5, §6
+- Codes against D10–D13 with mocked responses, so it can run in parallel with T4.3 and T4.4.
+- **Owns:** `src/api/aiAnalysis.ts`, `src/features/ai/analysis/**`, and `src/i18n/locales/{en,pt-BR}/aiAnalysis.json`. Also edits `src/api/tasks.ts` (types), `features/tasks/form/{taskForm.ts,fields.tsx,TaskForm.tsx}`, `features/tasks/detail/{TaskDetailView.tsx,TaskFields.tsx}`, and `tasks.json` (the field label and validation messages).
+- **Changes:**
+  - `Task.estimatedHours: number | null` and the request types. `TaskFormValues.estimatedHours: string` (`''` = none), handled in `taskToFormValues`, `validateTaskForm` (an integer 1–999), `diffTaskForm` (`''` → `null`), and the create request.
+  - A number input in the task form; `TaskFields` shows the hours, or "Not estimated".
+  - `useAnalyzeTask()` mutation hook in `src/api/aiAnalysis.ts`: never cached, never auto-retried (wave 3, D9).
+  - An analyze button and an `AnalysisReview` in `features/ai/analysis/`, wired into `TaskDetailView` per D14. `TaskDetailView` keeps the values to open the edit form with, so "Apply to form" opens `TaskForm` with the merged values.
+  - Register `aiAnalysis.json` in `src/i18n/index.ts`, `i18next.d.ts`, and `locales.test.ts`.
+- **Acceptance:** component tests:
+  - the button sits between Edit and Delete, is hidden while editing, and is disabled while loading
+  - the review shows current vs suggested values and the reason
+  - applying with one field unchecked opens the form with only the checked fields changed, and Save sends a `PATCH` with exactly those fields
+  - Dismiss hides the review; 422, 429, and 503 show the localized message and change nothing
+  - the form rejects hours 0, 1000, and 2.5, and clearing the field sends `estimatedHours: null`
+- **Verify:** `npm run lint && npm run build && npm test`
+- **Commit:** `feat(ui): add estimated hours and AI task analysis`
+
+> **Checkpoint C (addendum done):** run `docker compose up --build` with a real key. Open a task, click "Analyze with AI", uncheck one field, apply, and save: the task shows the new values and hours. Switch to PT-BR and analyze again: the reason is in Portuguese. Use a bad key: the unavailable message shows and the task is unchanged. Without a key, the AI steps are skipped, never passed. Run `./mvnw test` in the API and `npm run lint && npm run build && npm test` in the UI. Then commit the submodule pointers in the root: `chore: bump submodules (wave 4 addendum)`.
+
 ## After this wave
 
 - Fold into PLAN §5: D1 (DTO names), D2–D3 (history item and reply limits), D4 (the full context order with tie-breakers, `openTaskCount`, and `parentTitle`), and D8 (a message joins the history only after a reply).
 - Add the D7 router exception to the hotspot table in `TASKS.md`.
 - Record Checkpoint A's latency numbers here and, if timeouts persist, raise D9 with the maintainer.
 - Mark this plan as done.
+- Addendum: fold D10 into PLAN §1 and §2 (Task object, Validation and defaults) and the §4 endpoint bodies; D11–D14 into PLAN §5 (an "Analyze a task" scenario and the endpoint row) and §6 (AI UX). Then mark the addendum done.

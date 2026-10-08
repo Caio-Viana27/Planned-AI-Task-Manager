@@ -44,7 +44,7 @@ Several parallel tasks have to touch the same files. The rules for each:
 | `pom.xml`, `package.json` | Only Wave 0 tasks, T1.2 (the OAuth2 resource server starter), and T5.2 add dependencies. Any other task that needs one stops and asks the orchestrator. |
 | `exception/ErrorCode.java` | Every code in PLAN §2 is created up front in T0.4. Later tasks only *use* the codes. |
 | `application.properties` | T0.2 adds every property the plan needs, including AI, JWT, and timezone. T1.1 adds the two Hibernate timestamp properties (wave 1 plan, D3). T2.1 adds `app.tasks.max-depth=5` and its `AppProperties` binding. T3.1 adds `spring.ai.retry.max-attempts=0` (wave 3 plan, D2; the property is a retry count). The wave 3 D10 change maps the `AI_*` env vars. Later tasks only read them. |
-| UI locale files `src/i18n/locales/{en,pt-BR}/*.json` | One **namespace file per feature** (`auth.json`, `tasks.json`, `ai.json`, `aiBreakdown.json`, `chat.json`, `passwordReset.json`, `errors.json`), so parallel tasks don't touch the same file. `errors.json` (all error codes) is created up front in T0.3. T1.7 adds `auth.json` and registers it in `src/i18n/index.ts`, `i18next.d.ts`, and `locales.test.ts`; later namespaces are registered the same way. |
+| UI locale files `src/i18n/locales/{en,pt-BR}/*.json` | One **namespace file per feature** (`auth.json`, `tasks.json`, `ai.json`, `aiBreakdown.json`, `chat.json`, `aiAnalysis.json`, `passwordReset.json`, `errors.json`), so parallel tasks don't touch the same file. `errors.json` (all error codes) is created up front in T0.3. T1.7 adds `auth.json` and registers it in `src/i18n/index.ts`, `i18next.d.ts`, and `locales.test.ts`; later namespaces are registered the same way. T4.5 (`aiAnalysis.json`) and T5.3 (`passwordReset.json`) both edit those three files, so T5.3 starts after T4.5 is merged. |
 | UI router `src/routes/router.tsx` | T0.3 creates every route as a placeholder page. T1.5 wraps the routes in a root auth route. T4.2 passes `chatPanel={<ChatPanel />}` to the protected `AppLayout` (wave 4 plan, D7). Other feature tasks replace their own page files and never edit the router. |
 | `config/SecurityConfig.java` | T1.3 owns this file. T5.2 is the only later task that may touch it, to make the reset endpoints public. |
 
@@ -76,6 +76,7 @@ Wave 2  T2.1 (API) → T2.2 (API) → { T2.3, T2.4, T2.5 } (API)
 Wave 3  T3.1 (API) → { T3.2, T3.3 } (API)
         T3.4 (UI) → T3.5 (UI)   (see plans/wave-3-ai.md)
 Wave 4  T4.1 (API) ‖ T4.2 (UI)   (see plans/wave-4-chat.md)
+        Addendum D10–D14: T4.3 (API) → T4.4 (API) ‖ T4.5 (UI)
 Wave 5  T5.1 (root) → T5.2 (API) ‖ T5.3 (UI)
 Final   T9.1 (root, orchestrator)
 ```
@@ -230,12 +231,15 @@ The task cards for this wave live in [`plans/wave-3-ai.md`](plans/wave-3-ai.md),
 
 ## Wave 4: Chat (PLAN §5, chat)
 
-The task cards for this wave live in [`plans/wave-4-chat.md`](plans/wave-4-chat.md), together with its decisions (D1–D9). That plan replaces the cards that used to be here. `T4.n` anywhere in this file means task 4.n of that plan:
+The task cards for this wave live in [`plans/wave-4-chat.md`](plans/wave-4-chat.md), together with its decisions (D1–D14). That plan replaces the cards that used to be here. `T4.n` anywhere in this file means task 4.n of that plan:
 
 | ID | Task | Repo |
 |---|---|---|
 | T4.1 | Read-only chat endpoint (`ChatAssistantService`, `chat.st`, chat-context query) | API |
 | T4.2 | Chat panel in the `AppLayout` slot | UI |
+| T4.3 | Estimated hours field (addendum, D10) | API |
+| T4.4 | AI task analysis endpoint (addendum, D11–D13) | API |
+| T4.5 | Estimated hours and "Analyze with AI" (addendum, D10, D14) | UI |
 
 ## Wave 5: Password reset (PLAN §3, Phase 5)
 
