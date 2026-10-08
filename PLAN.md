@@ -14,7 +14,7 @@ These decisions resolve ambiguities in earlier drafts. Change them here first if
 | Overdue | `OVERDUE` stays a **stored status**. A scheduled job sets it (see §2 "Status rules"). |
 | "Today" | Comes from the configurable app time zone `app.timezone` (default `America/Sao_Paulo`). `dueDate` is a `DATE`, with no time component. |
 | Subtasks | **A tree, at most 5 levels deep.** Every task has at most one parent and any number of subtasks, which can have subtasks of their own. "Parent" and "subtask" are roles, not types: there is one `Task` entity. A top-level task is depth 1, and a task at the maximum depth (`app.tasks.max-depth`, default `5`) can't get subtasks. Deleting a task deletes its whole subtree. The parent is set only when a subtask is created and never changes, so the tree can't have cycles. Subtasks are hidden from the main list by default. They can be created manually or from AI drafts. |
-| AI suggestions | "Enhance" and "Estimate" are **merged** into one `POST /api/v1/ai/suggest` endpoint. It takes a draft `{title, description}`, so it works on unsaved tasks too. Breakdown stays task-based. |
+| AI suggestions | "Enhance" and "Estimate" are **merged** into one `POST /api/v1/ai/suggest` endpoint. It takes a draft `{title, description}`, so it works on unsaved tasks too. Breakdown stays task-based. A saved task can also be **analyzed** (`POST /tasks/{id}/ai/analysis`): the AI suggests its priority, complexity, and estimated hours, with a reason (wave 4 plan, D11–D14). |
 | Chat | **Query-only and stateless** in v1. The client may send the last few messages as context, and nothing is persisted. Creating and editing tasks through chat (tool calling) comes in a later phase. |
 | Roles | `USER` and `ADMIN` are seeded. Every new account gets `USER`. There are no admin endpoints in v1. Every user sees only their own tasks. |
 | User name | Sign-up takes `name`, a display name that isn't unique and maps to `USERS.NAME`. Users sign in with `email`. |
@@ -28,6 +28,7 @@ These decisions resolve ambiguities in earlier drafts. Change them here first if
 - `TASK.PARENT_TASK_ID UUID NULL REFERENCES TASK(ID) ON DELETE CASCADE`, with `CHECK (PARENT_TASK_ID <> ID)` and an index on `PARENT_TASK_ID`. A column holds exactly one parent per task, and the cascade deletes a whole subtree at any depth.
 - Drop `TASK_SUBTASK`. It's empty, because no endpoint wrote tasks before this migration. V1 itself isn't edited.
 - An index on `TASK (USER_ID, STATUS_ID, DUE_DATE)` for listing and filtering.
+- `TASK.ESTIMATED_HOURS INT NULL` with `CHECK (ESTIMATED_HOURS BETWEEN 1 AND 999)`: estimated effort in whole hours, `NULL` when not estimated. Added by a later migration (wave 4 plan, D10).
 - `TASK.POSITION INT NOT NULL DEFAULT 0`: the order of a task among its siblings, in creation order (request order for a batch, including accepted AI drafts). It's internal and never appears in the API. Top-level tasks keep `0`.
 
 The service layer enforces the depth limit (§0) and creates every subtask with its parent's `USER_ID`. The database doesn't check depth.
@@ -45,6 +46,7 @@ The service layer enforces the depth limit (§0) and creates every subtask with 
   "priority": "LOW | MEDIUM | HIGH",
   "status": "TODO | IN_PROGRESS | OVERDUE | DONE",
   "complexity": "EASY | MEDIUM | HARD | null",
+  "estimatedHours": "integer (1-999) | null",
   "parentTaskId": "uuid | null",
   "ancestors": [ { "id": "uuid", "title": "string" } ],
   "canAddSubtasks": true,
@@ -78,7 +80,8 @@ The service layer enforces the depth limit (§0) and creates every subtask with 
 ### Validation and defaults
 
 - `title`: required, not blank, at most 100 characters. `description`: required, not blank, at most 500 characters.
-- `priority` defaults to `MEDIUM`. `status` defaults to `TODO`. `complexity` defaults to `null`.
+- `estimatedHours`: optional, a whole number from 1 to 999. A decimal (e.g. `2.5`) or any other value → `400 VALIDATION_ERROR`, never rounded. Subtask creation doesn't take it, so subtasks start with `null`.
+- `priority` defaults to `MEDIUM`. `status` defaults to `TODO`. `complexity` and `estimatedHours` default to `null`.
 - Enum values are the lookup-table **names**. The service resolves names to IDs, and IDs never appear in the API. An unknown name returns `400`.
 
 ### Status rules
@@ -221,10 +224,10 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
 
 | Method | Endpoint | Description | Request | Response |
 |---|---|---|---|---|
-| `POST` | `/api/v1/tasks` | Create a task | `{ title, description, dueDate?, priority?, complexity? }` | `201` Task, with a `Location` header |
+| `POST` | `/api/v1/tasks` | Create a task | `{ title, description, dueDate?, priority?, complexity?, estimatedHours? }` | `201` Task, with a `Location` header |
 | `GET` | `/api/v1/tasks/{id}` | Get one task | – | `200` Task (with `ancestors`, `canAddSubtasks`, and `subtasks`) |
-| `PUT` | `/api/v1/tasks/{id}` | Replace editable fields | `{ title, description, dueDate, priority, status, complexity }` | `200` Task |
-| `PATCH` | `/api/v1/tasks/{id}` | Partial update | Any subset of the `PUT` fields | `200` Task |
+| `PUT` | `/api/v1/tasks/{id}` | Replace editable fields | `{ title, description, dueDate, priority, status, complexity, estimatedHours }` (`null` clears `dueDate`, `complexity`, or `estimatedHours`) | `200` Task |
+| `PATCH` | `/api/v1/tasks/{id}` | Partial update | Any subset of the `PUT` fields (absent = unchanged; `null` clears `dueDate`, `complexity`, or `estimatedHours`) | `200` Task |
 | `DELETE` | `/api/v1/tasks/{id}` | Delete the task and its whole subtree | – | `204` |
 | `GET` | `/api/v1/tasks` | List and filter | See the query parameters below | `200` Page of Task |
 | `POST` | `/api/v1/tasks/{id}/subtasks` | Create subtasks (manual or accepted AI drafts) | `[{ title, description, priority?, complexity?, dueDate? }]` (1–10 items) | `201` `[Task]` |
@@ -251,7 +254,7 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
 
 ### Shared rules for every AI endpoint
 
-- All model access goes through one provider-neutral `AiClient` (in `service/ai/`). Controllers and feature services (`TaskSuggestionService`, `TaskBreakdownService`, the chat service) never touch `ChatModel`/`ChatClient` directly. Provider-specific code lives in only three places: the Spring AI starter in `pom.xml`, the `spring.ai.*` properties, and `AiClient.isTransient`, which classifies provider errors.
+- All model access goes through one provider-neutral `AiClient` (in `service/ai/`). Controllers and feature services (`TaskSuggestionService`, `TaskBreakdownService`, `TaskAnalysisService`, the chat service) never touch `ChatModel`/`ChatClient` directly. Provider-specific code lives in only three places: the Spring AI starter in `pom.xml`, the `spring.ai.*` properties, and `AiClient.isTransient`, which classifies provider errors.
 - **Structured output:** responses are mapped to Java records with Spring AI's structured output converter. Enum fields are checked against the lookup names. If parsing or validation fails, the API returns `422 AI_INVALID_RESPONSE`.
 - **Resilience:**
   - One deadline of 60 s (`app.ai.timeout`) covers the whole call, retry included, so the worst case is about 60 s. The UI's nginx proxy waits 75 s, so it never cuts an AI call short.
@@ -264,7 +267,7 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
   - User and task text go in clearly delimited sections and are treated as data, never as instructions.
   - Only the requesting user's own tasks are ever placed in a prompt.
 - **Context:** every prompt includes today's date and `app.timezone`, plus the user's locale. The UI sends its current i18n language as `Accept-Language` on every request (not the browser's default). The API maps any `pt*` to `pt-BR` and anything else, or a missing header, to `en`. Generated text is written in that language.
-- **Accepting suggestions:** AI endpoints never write to the database. Accepting a suggestion only fills the task form, in both create and edit mode. The user then saves through the normal task endpoints (`POST`, or `PATCH` with the changed fields).
+- **Accepting suggestions:** AI endpoints never write to the database. Accepting a suggestion or an analysis only fills the task form, in both create and edit mode. The user then saves through the normal task endpoints (`POST`, or `PATCH` with the changed fields).
 - **Config:** the vendor-neutral `AI_PROVIDER`, `AI_MODEL`, `AI_API_KEY`, and `AI_BASE_URL` go in `.env` and are listed in `.env.example` (wave 3 plan, D10). Gemini (`google-genai`) is the only provider built in.
 
 ### BDD use cases
@@ -284,6 +287,14 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
   * **And** the user can edit, remove, or reorder the drafts, then accept. Accepting calls `POST /tasks/{id}/subtasks` with the remaining drafts.
   * *Negative:* if the task is at the maximum depth, the API returns `400 SUBTASK_DEPTH_EXCEEDED`.
 
+* **Analyze a task**
+  * **Given** an authenticated user is viewing one of their saved tasks, in any status,
+  * **When** they click "Analyze with AI" (between Edit and Delete),
+  * **Then** the AI returns a suggested `priority`, `complexity` (always set), `estimatedHours` (a whole number, 1–999), and a plain-text `reason` (not blank, at most 1000 characters) in the user's language. Anything else → `422 AI_INVALID_RESPONSE`.
+  * **And** the prompt holds the task's title, description, status, due date, and current priority, complexity, and estimated hours (so the AI can keep or change them), the titles of its ancestors (root first), and the title and status of each direct subtask.
+  * **And** the UI shows current vs suggested values for the three fields, each with a checkbox (all checked), plus the reason. "Apply to form" opens the edit form with the checked values filled in. Nothing is saved until the user saves, which sends `PATCH` with the changed fields. The reason is never stored.
+  * *Negative:* another user's task returns `404 TASK_NOT_FOUND`, without using quota.
+
 * **Chat assistant (query-only)**
   * **Given** an authenticated user opens the chat panel,
   * **When** they ask something like "Do I have overdue tasks?",
@@ -302,6 +313,7 @@ The chat DTOs are named `AiChatRequest`, `AiChatMessage`, and `AiChatResponse`, 
 |---|---|---|---|---|
 | `POST` | `/api/v1/ai/suggest` | Improve a draft or existing task | `{ title, description }` | `200` `{ suggestedTitle, suggestedDescription, suggestedPriority, suggestedComplexity, reasoning }` |
 | `POST` | `/api/v1/tasks/{id}/ai/breakdown` | Draft subtasks for a task | – | `200` `[{ title, description, priority, complexity }]` |
+| `POST` | `/api/v1/tasks/{id}/ai/analysis` | Suggest priority, complexity, and estimated hours for a saved task | – | `200` `{ priority, complexity, estimatedHours, reason }` |
 | `POST` | `/api/v1/ai/chat` | Ask about your tasks | `{ message, history?: [{ role: "user"\|"assistant", content }] }` (`message` not blank, at most 1000 characters; at most 10 history items, oldest first, each `content` not blank and at most 2000 characters; any breach → `400 VALIDATION_ERROR`, with no quota used) | `200` `{ reply }` |
 
 ## 6. UI scope
@@ -322,7 +334,7 @@ All of this follows the conventions in `AGENTS.md`: React Router, TanStack Query
 
 **AI UX:**
 - Loading states while the AI works.
-- A diff-style accept/reject view for suggestions.
+- A diff-style accept/reject view for suggestions and task analyses.
 - An editable draft list for breakdowns.
 - Every error `code` in §2 has an i18n key in both locales.
 
@@ -349,6 +361,6 @@ All of this follows the conventions in `AGENTS.md`: React Router, TanStack Query
 | 1 | Auth: sign up, sign in, `/users/me`, JWT security config, error handler, UI login and signup | Tests pass and the UI can log in and out |
 | 2 | Task CRUD, filters, subtasks, lookups, the overdue job, the task schema migration (§1), and the UI dashboard and detail pages | All §4 scenarios are covered by tests |
 | 3 | AI suggest and breakdown | All §5 scenarios except chat are covered, with the AI mocked |
-| 4 | Chat assistant (query-only) | The chat scenarios are covered |
+| 4 | Chat assistant (query-only), plus task analysis and estimated hours (addendum) | The chat and analysis scenarios are covered |
 | 5 | Password reset (SMTP, Mailpit in compose) | The reset scenarios are covered |
 | Later | Chat tool calling (create and update tasks), refresh tokens, admin features, parent auto-completion, moving a task to another parent (needs a cycle check) | – |
