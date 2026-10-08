@@ -251,19 +251,20 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
 
 ### Shared rules for every AI endpoint
 
-- All model access goes through one `AiAssistantService` (in `service/`). Controllers and other services never touch `ChatModel`/`ChatClient` directly.
+- All model access goes through one provider-neutral `AiClient` (in `service/ai/`). Controllers and feature services (`TaskSuggestionService`, `TaskBreakdownService`, the chat service) never touch `ChatModel`/`ChatClient` directly. Provider-specific code lives in only three places: the Spring AI starter in `pom.xml`, the `spring.ai.*` properties, and `AiClient.isTransient`, which classifies provider errors.
 - **Structured output:** responses are mapped to Java records with Spring AI's structured output converter. Enum fields are checked against the lookup names. If parsing or validation fails, the API returns `422 AI_INVALID_RESPONSE`.
 - **Resilience:**
-  - Timeout of 20 s.
-  - One retry, only on transient errors.
-  - Gemini timeouts, `429`s, and `5xx` errors return `503 AI_UNAVAILABLE`.
+  - One deadline of 20 s (`app.ai.timeout`) covers the whole call, retry included, so the worst case is about 20 s.
+  - One retry, only on transient errors (a provider `429`, a `5xx`, or an I/O error) and only while the deadline hasn't passed. A timeout isn't retried.
+  - Spring AI's own retry is off (`spring.ai.retry.max-attempts=0`), so `AiClient` is the only place that retries.
+  - Timeouts, provider `429`s and `5xx`s, and other model errors (e.g. a bad key) return `503 AI_UNAVAILABLE`.
   - The UI shows a localized "AI is temporarily unavailable" message and keeps the user's work intact.
 - **Quota:** 30 AI requests per user per hour (configurable). Above that, the API returns `429 AI_RATE_LIMITED`.
 - **Prompt hygiene:**
   - User and task text go in clearly delimited sections and are treated as data, never as instructions.
   - Only the requesting user's own tasks are ever placed in a prompt.
-- **Context:** every prompt includes today's date and `app.timezone`, plus the user's locale (`Accept-Language`, `en` or `pt-BR`). Generated text is written in that language.
-- **Accepting suggestions:** AI endpoints never write to the database. The user saves accepted suggestions through the normal task endpoints.
+- **Context:** every prompt includes today's date and `app.timezone`, plus the user's locale. The UI sends its current i18n language as `Accept-Language` on every request (not the browser's default). The API maps any `pt*` to `pt-BR` and anything else, or a missing header, to `en`. Generated text is written in that language.
+- **Accepting suggestions:** AI endpoints never write to the database. Accepting a suggestion only fills the task form, in both create and edit mode. The user then saves through the normal task endpoints (`POST`, or `PATCH` with the changed fields).
 - **Config:** the vendor-neutral `AI_PROVIDER`, `AI_MODEL`, `AI_API_KEY`, and `AI_BASE_URL` go in `.env` and are listed in `.env.example` (wave 3 plan, D10). Gemini (`google-genai`) is the only provider built in.
 
 ### BDD use cases
@@ -273,7 +274,7 @@ Phase 5 adds a `PASSWORD_RESET_TOKEN` table (`USER_ID`, `TOKEN_HASH`, `EXPIRES_A
   * **When** they click "Suggest with AI",
   * **Then** the AI returns a rewritten title and description, a suggested priority and complexity, and a short reasoning.
   * **And** the UI shows the current and suggested values side by side. The user can accept them all, pick fields one by one, or dismiss them.
-  * **And** for a saved task, accepting calls `PATCH /tasks/{id}`. For a draft, accepting fills the create form.
+  * **And** accepting fills the task form (create or edit) with the chosen fields. Nothing is saved until the user saves the form, which sends `POST /tasks` or `PATCH /tasks/{id}` with the changed fields.
 
 * **Break down into subtasks**
   * **Given** a saved task below the maximum depth,

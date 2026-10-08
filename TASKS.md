@@ -218,7 +218,7 @@ The task cards for this wave live in [`plans/wave-2-tasks.md`](plans/wave-2-task
 
 ## Wave 3: AI suggest and breakdown (PLAN §5)
 
-The task cards for this wave live in [`plans/wave-3-ai.md`](plans/wave-3-ai.md), together with its decisions (D1–D9). That plan replaces the cards that used to be here. `T3.n` anywhere in this file means task 3.n of that plan:
+The task cards for this wave live in [`plans/wave-3-ai.md`](plans/wave-3-ai.md), together with its decisions (D1–D10). That plan replaces the cards that used to be here. `T3.n` anywhere in this file means task 3.n of that plan:
 
 | ID | Task | Repo |
 |---|---|---|
@@ -233,6 +233,12 @@ The task cards for this wave live in [`plans/wave-3-ai.md`](plans/wave-3-ai.md),
 ### T4.1 API: chat
 - **Repo:** API · **Depends on:** T3.1, T2.2 · **PLAN:** §0 (Chat), §5 (Chat scenario, endpoint)
 - **Owns:** `service/ai/ChatAssistantService`, the chat method in `controller/AiController`, `dto/ChatRequest`, `dto/ChatResponse`, `prompts/chat.st`, and a repository query for the chat context.
+- **Builds on wave 3** ([`plans/wave-3-ai.md`](plans/wave-3-ai.md)):
+  - Call the model only through `AiClient.call("chat", data, ChatResponse.class, locale)`, with the locale from `AiLocales.fromAcceptLanguage`. Don't use `ChatClient` or add retry or timeout code (D1, D2).
+  - Call `AiQuotaService.consume(userId)` after validation and before `AiClient`; a failed call still counts (D3).
+  - The message, the history, and the tasks go only in the `data` map, which `AiClient` sends as escaped JSON inside `<data>…</data>`. `chat.st` holds the rules (D4).
+  - `ChatResponse` carries Bean Validation (e.g. `reply` not blank, with a length limit stated in the prompt). A failure → `422 AI_INVALID_RESPONSE` (D6).
+  - Tests mock `ChatModel` with `support/AiStubs`.
 - **Scope:**
   - Validation: `message` is at most 1000 characters; `history` has at most 10 items with roles `user` or `assistant`.
   - Context: up to 20 of the caller's tasks that aren't DONE, ordered OVERDUE first, then `dueDate` ascending with nulls last, then priority descending.
