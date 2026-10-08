@@ -75,7 +75,7 @@ Wave 2  T2.1 (API) → T2.2 (API) → { T2.3, T2.4, T2.5 } (API)
         Addendum D9: T2.9 (API, after T2.2) → T2.10 (UI, after T2.7, T2.8)
 Wave 3  T3.1 (API) → { T3.2, T3.3 } (API)
         T3.4 (UI) → T3.5 (UI)   (see plans/wave-3-ai.md)
-Wave 4  T4.1 (API) ‖ T4.2 (UI)
+Wave 4  T4.1 (API) ‖ T4.2 (UI)   (see plans/wave-4-chat.md)
 Wave 5  T5.1 (root) → T5.2 (API) ‖ T5.3 (UI)
 Final   T9.1 (root, orchestrator)
 ```
@@ -230,44 +230,12 @@ The task cards for this wave live in [`plans/wave-3-ai.md`](plans/wave-3-ai.md),
 
 ## Wave 4: Chat (PLAN §5, chat)
 
-### T4.1 API: chat
-- **Repo:** API · **Depends on:** T3.1, T2.2 · **PLAN:** §0 (Chat), §5 (Chat scenario, endpoint)
-- **Owns:** `service/ai/ChatAssistantService`, the chat method in `controller/AiController`, `dto/ChatRequest`, `dto/ChatResponse`, `prompts/chat.st`, and a repository query for the chat context.
-- **Builds on wave 3** ([`plans/wave-3-ai.md`](plans/wave-3-ai.md)):
-  - Call the model only through `AiClient.call("chat", data, ChatResponse.class, locale)`, with the locale from `AiLocales.fromAcceptLanguage`. Don't use `ChatClient` or add retry or timeout code (D1, D2).
-  - Call `AiQuotaService.consume(userId)` after validation and before `AiClient`; a failed call still counts (D3).
-  - The message, the history, and the tasks go only in the `data` map, which `AiClient` sends as escaped JSON inside `<data>…</data>`. `chat.st` holds the rules (D4).
-  - `ChatResponse` carries Bean Validation (e.g. `reply` not blank, with a length limit stated in the prompt). A failure → `422 AI_INVALID_RESPONSE` (D6).
-  - Tests mock `ChatModel` with `support/AiStubs`.
-- **Scope:**
-  - Validation: `message` is at most 1000 characters; `history` has at most 10 items with roles `user` or `assistant`.
-  - Context: up to 20 of the caller's tasks that aren't DONE, ordered OVERDUE first, then `dueDate` ascending with nulls last, then priority descending.
-  - The system prompt says:
-    - the assistant is read-only
-    - it answers only from the provided tasks
-    - for requests to create or edit tasks, it explains how to do so in the UI
-  - The reply is in the request's locale.
-- **Acceptance:**
-  - The captured prompt contains only the caller's tasks, in the right order, capped at 20 (seed 25).
-  - Validation → 400.
-  - A model failure → 503.
-- **Verify:** `./mvnw test`
-- **Commit:** `feat(api): add read-only chat assistant endpoint`
+The task cards for this wave live in [`plans/wave-4-chat.md`](plans/wave-4-chat.md), together with its decisions (D1–D9). That plan replaces the cards that used to be here. `T4.n` anywhere in this file means task 4.n of that plan:
 
-### T4.2 UI: chat panel
-- **Repo:** UI · **Depends on:** T1.6 (layout slot) · **PLAN:** §5 (Chat scenario), §6
-- **Owns:** `src/api/chat.ts`, `src/features/chat/**`, and `chat.json`.
-- **Scope:**
-  - A collapsible side panel in the `AppLayout` slot.
-  - The message list is kept in component state only, not persisted. Each request sends the last 10 messages as history.
-  - While waiting for a reply, show a typing indicator and disable sending.
-  - If sending fails, the input text is kept and a localized error appears (503 or 429).
-  - Clear the chat on logout.
-- **Acceptance:** component tests:
-  - the request includes the last 10 messages of history
-  - when sending fails, the input text is still there and the error shows
-- **Verify:** `npm run lint && npm run build && npm test`
-- **Commit:** `feat(ui): add chat assistant panel`
+| ID | Task | Repo |
+|---|---|---|
+| T4.1 | Read-only chat endpoint (`ChatAssistantService`, `chat.st`, chat-context query) | API |
+| T4.2 | Chat panel in the `AppLayout` slot | UI |
 
 ## Wave 5: Password reset (PLAN §3, Phase 5)
 
